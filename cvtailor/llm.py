@@ -401,7 +401,7 @@ class LLM:
 
     # ------------------------------------------------------------ selection
 
-    def write(self, system: str, user: str, max_tokens: int = 4096,
+    def write(self, system: str, user: str, max_tokens: int = 16000,
               reasoning: Optional[str] = None) -> tuple[str, Usage]:
         """A free-text call (no schema): analysis and review notes for careful mode.
         The text is only ever shown to the model again or to the user, never rendered."""

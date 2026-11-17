@@ -30,7 +30,7 @@ import yaml
 
 from . import choices
 from .config import normalize_key
-from .llm import LLM, LLMError, Usage
+from .llm import LLM, LLMError, Truncated, Usage
 from .master import build_llm_index, item_index, item_text
 from .schema import TIERS, LLMSelection, Master
 
@@ -197,18 +197,26 @@ def careful_select(llm: LLM, job_text: str, master: Master, *, matches: dict[str
     ex = examples_block(examples or [], job_text)
     system = ANALYSIS_SYSTEM_PROMPT + ("\n" + ex + "\n" if ex else "") + "\nMASTER RESUME INDEX (JSON):\n" + index
     user = "JOB DESCRIPTION:\n" + job_text + (f"\n\n{hints}" if hints else "")
-    analysis, usage = llm.write(system, user, reasoning=reasoning)
-    notes = [f"analysis: {len(analysis.split())} words" + (", with a worked example" if ex else "")]
+    usage = Usage()
+    try:
+        analysis, usage = llm.write(system, user, reasoning=reasoning)
+        notes = [f"analysis: {len(analysis.split())} words" + (", with a worked example" if ex else "")]
+    except Truncated:  # the analysis is evidence, not a requirement: select without it
+        analysis, notes = "", ["analysis: cut off at the token limit, selected without it"]
 
-    context = "\n\n".join(p for p in (hints, "ANALYSIS (follow it where it is right):\n" + analysis) if p)
+    context = "\n\n".join(p for p in (hints, analysis and "ANALYSIS (follow it where it is right):\n" + analysis) if p)
     draft, u = llm.select(job_text, master, context)
     usage = usage.add(u)
     if not review:
         return CarefulResult(draft, usage, analysis, "", False, notes)
 
-    critique, u = llm.write(REVIEW_SYSTEM_PROMPT + "\nMASTER RESUME INDEX (JSON):\n" + index,
-                            f"JOB DESCRIPTION:\n{job_text}\n\nDRAFT SELECTION:\n{describe(draft, master)}",
-                            max_tokens=2048, reasoning=reasoning)
+    try:
+        critique, u = llm.write(REVIEW_SYSTEM_PROMPT + "\nMASTER RESUME INDEX (JSON):\n" + index,
+                                f"JOB DESCRIPTION:\n{job_text}\n\nDRAFT SELECTION:\n{describe(draft, master)}",
+                                reasoning=reasoning)
+    except Truncated:
+        notes.append("review: cut off at the token limit; kept the first draft")
+        return CarefulResult(draft, usage, analysis, "", False, notes)
     usage = usage.add(u)
     if critique.strip().upper().startswith(NO_CHANGES):
         notes.append("review: no changes")

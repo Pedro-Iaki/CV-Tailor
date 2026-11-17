@@ -60,6 +60,18 @@ def test_failed_revision_keeps_valid_draft(monkeypatch, master, selection_dict, 
     assert "the revision failed" in res.notes[-1]
 
 
+def test_cut_off_passes_fall_back(monkeypatch, master, selection_dict, job_text):
+    """A truncated analysis or review never fails the run: they are evidence only."""
+    http = FakeHTTP(monkeypatch, chat("", finish="length"), sel_reply(selection_dict), chat("", finish="length"))
+    llm = LLM("m", None, client=LocalClient("http://h/v1"), count_limits=True, max_output=10000)
+    res = careful_select(llm, job_text, master, matches={})
+    assert res.selection.summary_id == selection_dict["summary_id"] and res.analysis == ""
+    assert res.notes == ["analysis: cut off at the token limit, selected without it",
+                         "review: cut off at the token limit; kept the first draft"]
+    assert http.requests[0]["body"]["max_tokens"] == 10000  # free text gets the full limit
+    assert "ANALYSIS" not in http.requests[1]["body"]["messages"][1]["content"]
+
+
 def test_tag_hints(master, job_text):
     hints = tag_hints(master, match_tags(job_text, master))
     assert hints and all(h.startswith("- ") for h in hints)
