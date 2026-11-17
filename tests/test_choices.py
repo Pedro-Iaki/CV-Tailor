@@ -63,18 +63,36 @@ def test_schema(master_dict):
     assert list(props)[:2] == ["key_requirements", "summary_id"] and s["required"] == list(props)
     # Jobs: one rank per bullet (keys can't repeat), ranks capped at max_bullets_per_job
     # (5), and one anyOf branch per bullet that requires it, so at least one is picked.
+    # Acme has 6 slots and a maximum of 5: every branch forces one slot to 0 and
+    # requires another to be ranked, so 1 to 5 bullets are always picked.
     branches = props["bullets"]["properties"]["job-acme"]["anyOf"]
     acme = branches[0]["required"]
-    assert len(branches) == len(acme)
     assert "acme-dbx-pipeline-01" in acme and not {"acme-dbx-short-01b", "acme-dbx-short-01c"} & set(acme)
-    for b, branch in zip(acme, branches):
-        assert branch["additionalProperties"] is False
-        assert branch["properties"][b]["enum"] == [1, 2, 3, 4, 5]
-        others = [k for k in acme if k != b]
-        assert all(branch["properties"][k]["enum"] == [0, 1, 2, 3, 4, 5] for k in others)
-    # Projects are optional: a plain rank object, everything may be 0
-    proj = props["bullets"]["properties"]["proj-airflow-demo"]
-    assert "anyOf" not in proj and proj["properties"]["lakehouse-dags-01"]["enum"] == [0, 1, 2]
+    assert len(acme) == 6 and len(branches) == 6 * 5
+    shapes = set()
+    for branch in branches:
+        assert branch["additionalProperties"] is False and branch["required"] == acme
+        enums = {k: tuple(v["enum"]) for k, v in branch["properties"].items()}
+        zero = [k for k, e in enums.items() if e == (0,)]
+        picked = [k for k, e in enums.items() if e == (1, 2, 3, 4, 5)]
+        assert len(zero) == 1 and len(picked) == 1 and zero != picked
+        shapes.add((zero[0], picked[0]))
+    assert len(shapes) == 30
+    # A job with fewer slots than the maximum only needs the "at least one" branches
+    intern = props["bullets"]["properties"]["job-intern"]["anyOf"]
+    assert len(intern) == 2
+
+    # Projects: rank + bullets + description; hidden means every bullet 0 and default
+    assert "project_ids" not in props and "proj-airflow-demo" not in props["bullets"]["properties"]
+    off, shown = props["projects"]["properties"]["proj-airflow-demo"]["anyOf"]
+    assert off["properties"]["rank"]["enum"] == [0] and shown["properties"]["rank"]["enum"] == [1, 2]
+    assert all(v["enum"] == [0] for v in off["properties"]["bullets"]["properties"].values())
+    assert off["properties"]["description"]["enum"] == ["default"]
+    assert shown["properties"]["description"]["enum"] == ["default", "lakehouse-desc-short"]
+    assert shown["properties"]["bullets"]["properties"]["lakehouse-dags-01"]["enum"] == [0, 1, 2]
+    assert "descriptions" not in props  # only projects had alternatives here
+    no_bullets = props["projects"]["properties"]["proj-kafka-lab"]["anyOf"][1]["properties"]
+    assert set(no_bullets) == {"rank"}
     assert props["bullet_versions"]["properties"] == {"acme-dbx-pipeline-01": {"type": "string", "enum": GROUP}}
     assert "skill_category_order" not in props
     branches = props["skills"]["anyOf"]
@@ -125,6 +143,21 @@ def test_decode_ranks():
     })
     assert out["bullets"] == {"job-acme": ["acme-adf-03", "acme-dbx-short-01c", "acme-cicd-04", "acme-cost-05"],
                               "proj-x": []}
+
+
+def test_decode_projects():
+    out = choices.decode({
+        "summary_id": "s",
+        "bullet_versions": {},
+        "projects": {"proj-a": {"rank": 2, "bullets": {"a1": 1, "a2": 0}, "description": "a-alt"},
+                     "proj-b": {"rank": 0, "bullets": {"b1": 0}, "description": "default"},
+                     "proj-c": {"rank": 1}},
+        "bullets": {"job-x": {"x1": 1}},
+        "descriptions": {"job-x": "x-alt"},
+    })
+    assert out["project_ids"] == ["proj-c", "proj-a"]
+    assert out["bullets"] == {"job-x": ["x1"], "proj-a": ["a1"]}  # hidden project: no key
+    assert out["descriptions"] == {"job-x": "x-alt", "proj-a": "a-alt"}
 
 
 def test_prompt_rewritten():

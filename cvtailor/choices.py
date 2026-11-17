@@ -145,22 +145,35 @@ def build_index(m: Master, ch: Choices | None = None) -> str:
 
 # ---------------------------------------------------------------- schema
 
+MAX_RANK_BRANCHES = 64  # above this, count limits are left to validation
+
+
 def _ranks(keys: list[str], top: int, at_least_one: bool) -> dict[str, Any]:
     """An object giving every key a rank, 0 (left out) to `top`. Object keys can't
-    repeat, so nothing can be listed twice. With at_least_one, one anyOf branch per
-    key requires that key to be ranked, so the grammar guarantees one pick."""
-    def obj(required_pick: str | None) -> dict[str, Any]:
+    repeat, so nothing can be listed twice.
+
+    Counts go into anyOf branches: with at_least_one, each branch requires one key to
+    be ranked; when there are more keys than `top`, each branch also forces enough
+    keys to 0 that at most `top` can be ranked. Branch counts are capped
+    (MAX_RANK_BRANCHES); beyond that the validator checks the counts."""
+    def obj(pick: str | None = None, zeros: tuple[str, ...] = ()) -> dict[str, Any]:
+        def enum(k: str) -> list[int]:
+            return [0] if k in zeros else list(range(1 if k == pick else 0, top + 1))
         return {
             "type": "object",
-            "properties": {k: {"type": "integer",
-                               "enum": list(range(1 if k == required_pick else 0, top + 1))}
-                           for k in keys},
+            "properties": {k: {"type": "integer", "enum": enum(k)} for k in keys},
             "required": list(keys),
             "additionalProperties": False,
         }
-    if at_least_one and keys and top >= 1:
-        return {"anyOf": [obj(k) for k in keys]}
-    return obj(None)
+    need_zero = max(0, len(keys) - top)
+    zero_sets = list(itertools.combinations(keys, need_zero)) if need_zero else [()]
+    picks = keys if at_least_one and top >= 1 else [None]
+    branches = [(p, z) for z in zero_sets for p in picks if p not in z]
+    if len(branches) > MAX_RANK_BRANCHES:  # too many shapes: keep only the minimum
+        branches = [(p, ()) for p in picks]
+    if len(branches) == 1:
+        return obj(*branches[0])
+    return {"anyOf": [obj(p, z) for p, z in branches]}
 
 
 def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
@@ -186,8 +199,38 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
             "required": list(ch.groups),
             "additionalProperties": False,
         }
+    # Projects: rank, bullets and description together. A hidden project (rank 0) can
+    # only have 0 for every bullet and the default description, so bullets of a
+    # project that isn't shown can't be expressed.
+    props.pop("project_ids")
+    descs = (props.get("descriptions") or {}).get("properties", {})
+    max_p = min(m.limits.max_projects, len(m.projects))
+    projects: dict[str, Any] = {}
+    for p in m.projects:
+        bullets = owners.pop(p.id, None)
+        desc = descs.pop(p.id, None)
+        shown: dict[str, Any] = {"rank": {"type": "integer", "enum": list(range(1, max_p + 1))}}
+        off: dict[str, Any] = {"rank": {"type": "integer", "enum": [0]}}
+        if bullets is not None:
+            shown["bullets"] = bullets
+            keys = bullets["required"] if "required" in bullets else bullets["anyOf"][0]["required"]
+            off["bullets"] = {"type": "object", "properties": {k: {"type": "integer", "enum": [0]} for k in keys},
+                              "required": keys, "additionalProperties": False}
+        if desc is not None:
+            shown["description"] = desc
+            off["description"] = {"type": "string", "enum": ["default"]}
+        shapes = [off, shown] if max_p else [off]
+        projects[p.id] = {"anyOf": [{"type": "object", "properties": sh, "required": list(sh),
+                                     "additionalProperties": False} for sh in shapes]}
+    props["bullets"]["required"] = [k for k in props["bullets"]["required"] if k in owners]
+    if "descriptions" in props:
+        props["descriptions"]["required"] = list(descs)
+        if not descs:
+            props.pop("descriptions")
+    if projects:
+        new["projects"] = {"type": "object", "properties": projects, "required": list(projects),
+                           "additionalProperties": False}
     new["bullets"] = props.pop("bullets")
-    new["project_ids"] = props.pop("project_ids")
     skills_key = "skill_category_order"
     if ch.layouts:
         props.pop("skill_category_order")
@@ -238,6 +281,18 @@ def decode(data: dict[str, Any], master: Master | None = None) -> dict[str, Any]
     d = dict(data)
     d.pop("key_requirements", None)
     versions = d.pop("bullet_versions", None) or {}
+    projects = d.pop("projects", None)
+    if isinstance(projects, dict):  # {pid: {rank, bullets?, description?}}
+        entries = {pid: e for pid, e in projects.items() if isinstance(e, dict)}
+        d["project_ids"] = _ranked({pid: e.get("rank") for pid, e in entries.items()})
+        bullets = dict(d.get("bullets") or {})
+        descriptions = dict(d.get("descriptions") or {})
+        for pid in d["project_ids"]:
+            if "bullets" in entries[pid]:
+                bullets[pid] = entries[pid]["bullets"]
+            if "description" in entries[pid]:
+                descriptions[pid] = entries[pid]["description"]
+        d["bullets"], d["descriptions"] = bullets, descriptions
     if isinstance(d.get("bullets"), dict) and isinstance(versions, dict):
         d["bullets"] = {o: [versions.get(b, b) if isinstance(b, str) else b for b in _ranked(ids)]
                         for o, ids in d["bullets"].items()}
@@ -318,8 +373,20 @@ _NEW_INTRO = (
 _REWRITES = [
     (_OLD_RULE, _NEW_RULE),
     (_OLD_INTRO, _NEW_INTRO),
-    ("A project you do not pick gets an empty list.",
-     "A project you do not pick gets 0 for every bullet."),
+    ("""\
+- Projects are optional. Pick them in "project_ids". A picked project's bullets
+  go under "bullets" keyed by the project id (from none up to the project
+  maximum). A project you do not pick gets an empty list.
+""", """\
+- Projects are optional. Under "projects", give each project a rank: 0 leaves it
+  out (its bullets then all get 0 and its description stays "default"), 1 shows it
+  first, 2 second. A shown project numbers its own bullets and picks its
+  description there.
+- Count before answering: respect the maximum bullets per job and per project, and
+  the total across jobs, projects and education.
+"""),
+    ('needs one option id under\n  "descriptions" (keyed by the job or project id)',
+     'needs one option id: a job\'s under\n  "descriptions" (keyed by the job id), a project\'s in its "projects" entry'),
     ("education id; otherwise give it an empty list.",
      "education id; otherwise give them 0."),
 ]
