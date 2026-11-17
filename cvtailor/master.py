@@ -390,6 +390,16 @@ def item_text(item: Item, lang: str = "en") -> str:
     return ""
 
 
+def shown_skill_items(cat: SkillCategory, chosen: Optional[list[str]]) -> list[Any]:
+    """The items of a skill category a selection shows: `chosen` (exact English texts,
+    in order) or, when None, every item in master order. Unknown texts are skipped
+    here; validate_selection reports them."""
+    if chosen is None:
+        return list(cat.items)
+    by_en = {skill_item_text(i, "en"): i for i in cat.items}
+    return [by_en[t] for t in chosen if t in by_en]
+
+
 def alt_conflicts(m: Master) -> dict[str, set[str]]:
     """id -> ids it may never be selected with.
 

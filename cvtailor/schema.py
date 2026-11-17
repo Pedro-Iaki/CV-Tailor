@@ -236,6 +236,9 @@ class Selection(_Strict):
     skill_category_order: SkillOrder = Field(default_factory=SkillOrder)
     # Job or project id -> id of one of its description_alts. Absent: the default description.
     descriptions: dict[str, str] = Field(default_factory=dict)
+    # Skill category id -> the subset of its own items to show, in this order, each
+    # given by its exact English text. Absent: every item, in master order.
+    skill_items: dict[str, list[str]] = Field(default_factory=dict)
 
     @model_validator(mode="before")
     @classmethod
@@ -248,6 +251,10 @@ class Selection(_Strict):
                 v["skill_category_order"] = {}
             if isinstance(v.get("bullets"), dict):
                 v["bullets"] = {k: ([] if b is None else b) for k, b in v["bullets"].items()}
+            if v.get("skill_items") is None:
+                v["skill_items"] = {}
+            elif isinstance(v["skill_items"], dict):  # a key with every item deleted
+                v["skill_items"] = {k: ([] if i is None else i) for k, i in v["skill_items"].items()}
             if v.get("descriptions") is None:
                 v["descriptions"] = {}
             elif isinstance(v["descriptions"], dict):  # "default" means: no alternative

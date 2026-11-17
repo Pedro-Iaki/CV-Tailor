@@ -15,7 +15,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
 from .config import TEMPLATES_DIR
-from .master import item_index, job_sort_key, parse_date
+from .master import item_index, job_sort_key, parse_date, shown_skill_items
 from .schema import Master, RenderInput, Selection, skill_item_text, text_of
 
 
@@ -105,16 +105,18 @@ def build_context(ri: RenderInput) -> dict[str, Any]:
     # Each skill line is "label: items". Hands-on and language categories keep their
     # own label; working and familiar categories are merged into one line per tier.
     # Languages come last.
+    def shown(cid: str) -> list[str]:  # the selection may drop or reorder a category's items
+        return [skill_item_text(i, lang) for i in shown_skill_items(idx[cid].obj, sel.skill_items.get(cid))]
+
     def own_lines(tier: str) -> list[dict[str, str]]:
-        return [{"label": idx[cid].obj.category.get(lang),
-                 "text": ", ".join(skill_item_text(i, lang) for i in idx[cid].obj.items)}
+        return [{"label": idx[cid].obj.category.get(lang), "text": ", ".join(shown(cid))}
                 for cid in getattr(sel.skill_category_order, tier)]
 
     skill_lines = own_lines("hands_on")
     for tier in ("working", "familiar"):
         items: list[str] = []
         for cid in getattr(sel.skill_category_order, tier):
-            items.extend(skill_item_text(i, lang) for i in idx[cid].obj.items)
+            items.extend(shown(cid))
         if items:
             skill_lines.append({"label": t["skills"][tier], "text": ", ".join(items)})
     skill_lines += own_lines("languages")

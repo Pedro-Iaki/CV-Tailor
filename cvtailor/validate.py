@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from .master import alt_conflicts, item_index
-from .schema import TIERS, Master, Selection
+from .schema import TIERS, Master, Selection, skill_item_text
 
 
 def validate_selection(sel: Selection, master: Master) -> list[str]:
@@ -84,6 +84,25 @@ def validate_selection(sel: Selection, master: Master) -> list[str]:
                 errors.append(f"'{cid}' in skill_category_order.{tier} is a {c.kind}, not a skill category")
             elif c.tier != tier:
                 errors.append(f"skill category '{cid}' belongs to tier {c.tier}, not {tier} (tiers cannot change)")
+
+    # skill items: a subset of the category's own items, for a selected category
+    chosen_cats = {c for t in TIERS for c in getattr(sel.skill_category_order, t)}
+    for cid, texts in sel.skill_items.items():
+        c = idx.get(cid)
+        if c is None or c.kind != "skill_category":
+            errors.append(f"skill_items: '{cid}' is not a skill category in the master")
+            continue
+        if cid not in chosen_cats:
+            errors.append(f"skill_items: category '{cid}' is not in skill_category_order")
+        if not texts:
+            errors.append(f"skill_items: '{cid}' lists no items (leave the category out instead)")
+        own = {skill_item_text(i, "en") for i in c.obj.items}
+        for text in texts:
+            if text not in own:
+                errors.append(f"skill_items: '{text}' is not an item of {cid} (items can't move between categories)")
+        for text, count in Counter(texts).items():
+            if count > 1:
+                errors.append(f"skill_items: '{text}' appears {count} times in {cid}")
 
     # 4. duplicates anywhere
     all_ids = [sel.summary_id]

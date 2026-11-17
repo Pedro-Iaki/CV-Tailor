@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .master import alt_conflicts, build_llm_index, item_index
-from .schema import TIERS, Master
+from .schema import TIERS, Master, skill_item_text
 
 MAX_LAYOUTS = 24  # above this, skills fall back to the plain per-tier arrays
 _MAX_COMPONENT = 12  # skill conflict groups larger than this are not enumerated
@@ -173,6 +173,7 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
     if ch.layouts:
         props.pop("skill_category_order")
         skills_key = "skills"
+        cats = {c.id: c for t in TIERS for c in m.skills.tier(t)}
         branches = []
         for i, lay in enumerate(ch.layouts):
             tiers = {}
@@ -183,10 +184,19 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
                 if count_limits:
                     arr = {**arr, "minItems": 0, "maxItems": len(ids)}
                 tiers[t] = arr
+            # Per category: its own items only (exact English text), reordered or trimmed.
+            item_props = {}
+            for cid in (c for t in TIERS for c in lay[t]):
+                own = [skill_item_text(x, "en") for x in cats[cid].items]
+                item_props[cid] = {"type": "array", "items": {"type": "string", "enum": own}}
+                if count_limits:
+                    item_props[cid] |= {"minItems": 1, "maxItems": len(own)}
             branches.append({
                 "type": "object",
-                "properties": {"layout": {"type": "string", "enum": [layout_id(i)]}, **tiers},
-                "required": ["layout", *TIERS],
+                "properties": {"layout": {"type": "string", "enum": [layout_id(i)]}, **tiers,
+                               "items": {"type": "object", "properties": item_props,
+                                         "required": list(item_props), "additionalProperties": False}},
+                "required": ["layout", *TIERS, "items"],
                 "additionalProperties": False,
             })
         new["skills"] = {"anyOf": branches}
@@ -200,9 +210,13 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
 
 # ---------------------------------------------------------------- decode
 
-def decode(data: dict[str, Any]) -> dict[str, Any]:
+def decode(data: dict[str, Any], master: Master | None = None) -> dict[str, Any]:
     """Choice-format answer -> plain selection dict. Never adds or drops an id; it only
-    swaps each slot id for the version picked for it."""
+    swaps each slot id for the version picked for it.
+
+    Skill items: the schema asks for items of every category in the layout, so items
+    of categories left out of the tiers are dropped, and (given the master) a list
+    equal to the full master order is dropped as well, since that is the default."""
     d = dict(data)
     d.pop("key_requirements", None)
     versions = d.pop("bullet_versions", None) or {}
@@ -211,7 +225,18 @@ def decode(data: dict[str, Any]) -> dict[str, Any]:
                         for o, ids in d["bullets"].items()}
     if "skills" in d:
         skills = d.pop("skills") or {}
-        d["skill_category_order"] = {t: skills.get(t) or [] for t in TIERS} if isinstance(skills, dict) else skills
+        if not isinstance(skills, dict):
+            d["skill_category_order"] = skills
+            return d
+        order = {t: skills.get(t) or [] for t in TIERS}
+        d["skill_category_order"] = order
+        items = skills.get("items")
+        if isinstance(items, dict):
+            chosen = {c for t in TIERS for c in order[t]}
+            full = ({c.id: [skill_item_text(x, "en") for x in c.items] for t in TIERS for c in master.skills.tier(t)}
+                    if master is not None else {})
+            d["skill_items"] = {cid: texts for cid, texts in items.items()
+                                if cid in chosen and texts != full.get(cid)}
     return d
 
 
@@ -243,6 +268,9 @@ _NEW_RULE = """\
   cover the job's requirements best. A layout with a "working" or "familiar" tier
   lists some skills at a lower experience level: prefer it when the job asks for
   skills that only appear there, rather than leaving them out.
+- Under skills.items, give every category of the chosen layout its skills, most
+  relevant to the job first. Leave out skills that do not help this job, but keep
+  at least one. A skill can only appear in its own category.
 """
 
 _OLD_INTRO = "Hard rules:\n"

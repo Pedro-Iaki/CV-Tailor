@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess
@@ -114,6 +115,28 @@ def to_annotated_yaml(sel: Selection, master: Master, errors: Optional[list[str]
         for c in master.skills.tier(tier):
             if c.id not in chosen:
                 out.append(line("    ", c.id, commented=True))
+
+    # skill items: per chosen category, which of its own items show and in what order
+    out.append("skill_items:   # per category: reorder or delete items; a commented-out category shows all")
+    cats = {c.id: c for t in TIERS for c in master.skills.tier(t)}
+    for tier in TIERS:
+        for cid in getattr(sel.skill_category_order, tier):
+            c = cats.get(cid)
+            if c is None:
+                continue
+            own = [text_of(i, "en") for i in c.items]
+            if cid in sel.skill_items:
+                chosen = sel.skill_items[cid]
+                out.append(f"  {cid}:")
+                out += [f"    - {json.dumps(t, ensure_ascii=False)}" for t in chosen]
+                out += [f"    # - {json.dumps(t, ensure_ascii=False)}" for t in own if t not in chosen]
+            else:
+                out.append(f"  # {cid}:")
+                out += [f"  #   - {json.dumps(t, ensure_ascii=False)}" for t in own]
+    for cid, chosen in sel.skill_items.items():  # keep unknown keys visible
+        if cid not in cats:
+            out.append(f"  {cid}:")
+            out += [f"    - {json.dumps(t, ensure_ascii=False)}" for t in chosen]
     return "\n".join(out) + "\n"
 
 

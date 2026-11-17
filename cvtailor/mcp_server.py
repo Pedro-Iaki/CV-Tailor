@@ -297,7 +297,9 @@ def update_selection(app_id: int, selection: dict) -> dict:
     """Replace an application's selection with a hand-picked one (ids only) and
     re-render without trimming. Shape: {summary_id, bullets: {job, project or education id:
     [bullet ids]}, project_ids: [...], descriptions: {job or project id: description id},
-    skill_category_order: {hands_on: [...], working: [...], familiar: [...], languages: [...]}}.
+    skill_category_order: {hands_on: [...], working: [...], familiar: [...], languages: [...]},
+    skill_items (optional): {category id: [its own item texts, in order]} to drop or
+    reorder a category's skills; items can't move between categories}.
     Every job must be present; items listed in each other's never_with can't go together.
     Use get_master_index for the ids.
     Rejected (and nothing changes) if invalid or longer than one page."""

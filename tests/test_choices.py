@@ -1,13 +1,16 @@
 """Choice format for local models: bullet versions and skill layouts as single choices."""
 
 import json
+import re
 
 from cvtailor import choices
 from cvtailor.config import Config
 from cvtailor.llm import LLM, SELECTION_SYSTEM_PROMPT, build_selection_schema
 from cvtailor.local_llm import LocalClient
 from cvtailor.master import parse_master
-from cvtailor.schema import LLMSelection
+from cvtailor.editor import parse_annotated, to_annotated_yaml
+from cvtailor.render import make_render_input, render_html
+from cvtailor.schema import LLMSelection, Selection
 from cvtailor.validate import validate_selection
 from tests.test_alternatives import with_alternatives
 from tests.test_local_llm import FakeHTTP, chat
@@ -146,6 +149,68 @@ def test_no_alternatives_keeps_plain_shape(master):
     s = choices.build_schema(master, build_selection_schema(master, count_limits=True), count_limits=True)
     assert "bullet_versions" not in s["properties"] and "skill_category_order" in s["properties"]
     assert "skill_layouts" not in json.loads(choices.build_index(master))
+
+
+# ---------------------------------------------------------------- skill items
+
+def test_skill_items_render_and_validate(master, selection_dict):
+    sel = Selection.model_validate({**selection_dict, "skill_items": {
+        "skills-modeling": ["Dimensional modeling", "dbt"],          # reordered, PostgreSQL dropped
+        "skills-working-streaming": ["Spark Structured Streaming"]}})
+    assert validate_selection(sel, master) == []
+    en = render_html(make_render_input(master, sel, "en"))
+    lines = dict(re.findall(r"<li><strong>(.*?):</strong>\s*(.*?)</li>", en))
+    assert lines["Modeling"] == "Dimensional modeling, dbt"
+    assert lines["Working knowledge"] == "Airflow, Power BI, Spark Structured Streaming"  # Kafka dropped
+    assert lines["Processing"] == "PySpark, Spark SQL, Delta Lake, pandas"  # no skill_items: unchanged
+    pt = render_html(make_render_input(master, sel, "pt"))
+    assert "Modelagem dimensional, dbt" in pt  # chosen by English text, rendered in PT
+
+
+def test_skill_items_rules(master, selection_dict):
+    sel = Selection.model_validate({**selection_dict, "skill_items": {
+        "skills-modeling": ["dbt", "PySpark", "dbt"],     # PySpark belongs to skills-processing
+        "skills-platform": [],                            # empty: leave the category out instead
+        "skills-working-flat": ["Airflow"],               # no such category in this master
+        "sum-platform": ["x"]}})
+    sel.skill_category_order.hands_on.remove("skills-platform")
+    sel.skill_items["skills-platform"] = ["Azure"]          # category not selected
+    errors = "\n".join(validate_selection(sel, master))
+    assert "'PySpark' is not an item of skills-modeling" in errors
+    assert "'dbt' appears 2 times in skills-modeling" in errors
+    assert "category 'skills-platform' is not in skill_category_order" in errors
+    assert "'skills-working-flat' is not a skill category" in errors
+    assert "'sum-platform' is not a skill category" in errors
+    empty = Selection.model_validate({**selection_dict, "skill_items": {"skills-modeling": None}})
+    assert any("lists no items" in e for e in validate_selection(empty, master))
+
+
+def test_skill_items_editor_round_trip(master, selection_dict):
+    sel = Selection.model_validate({**selection_dict, "skill_items": {"skills-modeling": ["Dimensional modeling", "dbt"]}})
+    text = to_annotated_yaml(sel, master)
+    assert '    - "Dimensional modeling"' in text and '    # - "PostgreSQL"' in text
+    assert '  # skills-processing:' in text and '  #   - "PySpark"' in text
+    assert parse_annotated(text) == sel
+    plain = Selection.model_validate(selection_dict)
+    assert parse_annotated(to_annotated_yaml(plain, master)) == plain
+
+
+def test_skill_items_in_schema_and_decode(master_dict):
+    m = alt_master(master_dict)
+    s = choices.build_schema(m, build_selection_schema(m, count_limits=True), count_limits=True)
+    branch = next(b for b in s["properties"]["skills"]["anyOf"]
+                  if "skills-flat" in b["properties"]["hands_on"]["items"]["enum"])
+    items = branch["properties"]["items"]["properties"]
+    assert items["skills-flat"]["items"]["enum"] == ["PySpark", "Databricks", "Azure"]
+    assert (items["skills-flat"]["minItems"], items["skills-flat"]["maxItems"]) == (1, 3)
+    assert "skills-processing" not in items  # not part of this layout
+
+    out = choices.decode({"summary_id": "s", "bullets": {}, "skills": {
+        "layout": "layout-5", "hands_on": ["skills-flat"], "working": [], "familiar": [], "languages": [],
+        "items": {"skills-flat": ["Azure", "PySpark"],                     # kept: a real choice
+                  "skills-modeling": ["dbt"],                              # dropped: category not listed
+                  "skills-languages": ["Python", "SQL"]}}}, m)             # dropped: same as master
+    assert out["skill_items"] == {"skills-flat": ["Azure", "PySpark"]}
 
 
 def test_config_and_context(monkeypatch, make_ctx):

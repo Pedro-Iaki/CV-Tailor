@@ -410,7 +410,7 @@ class LLM:
             try:
                 data = json.loads(_text_of(resp))
                 if self.choices and isinstance(data, dict):
-                    data = choices.decode(data)
+                    data = choices.decode(data, master)
                 sel = LLMSelection.model_validate(data)
             except json.JSONDecodeError as e:
                 errors = [f"output was not valid JSON: {e}"]

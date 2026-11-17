@@ -183,7 +183,10 @@ def describe_selection(sel: Selection, master: Master, lang: str = "en") -> list
     out.append("skills:")
     for tier in TIERS:
         for c in getattr(sel.skill_category_order, tier):
-            out.append(f"  [{tier}] {c}  {item_text(idx[c], lang)}")
+            if c in sel.skill_items:
+                out.append(f"  [{tier}] {c}  {', '.join(sel.skill_items[c])}")
+            else:
+                out.append(f"  [{tier}] {c}  {item_text(idx[c], lang)}")
     return out
 
 
