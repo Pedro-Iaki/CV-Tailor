@@ -226,6 +226,8 @@ def new(
     open_pdf: bool = typer.Option(False, "--open", help="Open the PDF when done."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Stop after selection; write nothing."),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
+    careful: bool = typer.Option(False, "--careful",
+                                 help="Analyse first, then select, then review once (slower, better)."),
     generate: bool = typer.Option(False, "--generate",
                                   help="Then draft wording improvements for y/n review (needs CV_ALLOW_GENERATION)."),
 ) -> None:
@@ -236,7 +238,7 @@ def new(
     text = _read_job_text(file, clip)
     opts = NewOptions(lang=lang, company=company, role=role, url=url, force_generate=force_generate,
                       variant=variant, no_trim=no_trim, allow_duplicate=allow_duplicate, yes=yes,
-                      dry_run=dry_run, verbose=verbose)
+                      dry_run=dry_run, verbose=verbose, careful=careful)
 
     def go() -> None:
         res = run_new(ctx, text, opts, _interactive_io())
@@ -627,6 +629,39 @@ def stats(
     table("by variant", s.by_variant)
     table("by language", s.by_lang)
     table("by route", s.by_route)
+
+
+@app.command()
+def rate(
+    candidates: Optional[List[Path]] = typer.Option(
+        None, "--candidates", "-c", help="JSONL file of extra CVs to rate (repeatable), e.g. benchmark output."),
+    apps: bool = typer.Option(True, "--apps/--no-apps", help="Include saved applications."),
+    port: int = typer.Option(8765, "--port"),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Don't open the page automatically."),
+) -> None:
+    """Rate CVs 1-5 on a local page (blind: the setup shows after rating). Ctrl+C to stop."""
+    import webbrowser
+
+    from cvtailor.ratings import RatingApp, RatingStore, application_candidates, file_candidates, serve
+    ctx = _ctx()
+    cands = application_candidates(ctx.db(), ctx.master) if apps else []
+    for path in candidates or []:
+        if not path.exists():
+            _fail(f"no such file: {path}")
+        cands += file_candidates(path, ctx.master)
+    if not cands:
+        _fail("nothing to rate: no applications, and no --candidates file given")
+    server = serve(RatingApp(cands, RatingStore(ctx.cfg.db_path)), port)
+    url = f"http://127.0.0.1:{port}/"
+    typer.echo(f"{len(cands)} CV(s) to rate at {url} (local only). Ctrl+C to stop.")
+    if not no_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("stopped; ratings are saved in applications.db (table cv_ratings)")
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

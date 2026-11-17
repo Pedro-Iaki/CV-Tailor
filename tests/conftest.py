@@ -93,18 +93,21 @@ class FakeClient:
     """Mimics client.messages.create. Queues answers for meta and selection calls."""
 
     def __init__(self, meta=None, selections=None, meta_error: Exception | None = None,
-                 proposals=None, revisions=None):
+                 proposals=None, revisions=None, texts=None):
         self.meta = meta or {"company": "Acme Pagamentos", "role_title": "Senior Data Engineer",
                              "language": "en", "job_url": None}
         self.selections = list(selections or [])
         self.proposals = list(proposals or [])   # each entry: list of drafts for one propose call
         self.revisions = list(revisions or [])   # each entry: one revised draft
         self.meta_error = meta_error
+        self.texts = list(texts or [])  # free-text answers (careful mode analysis / review)
         self.calls: list[dict] = []
         self.messages = self
 
     def create(self, **kwargs):
         self.calls.append(kwargs)
+        if "format" not in kwargs.get("output_config", {}):
+            return _resp(self.texts.pop(0), usage=(400, 0, 0, 80))
         schema = kwargs["output_config"]["format"]["schema"]
         if "role_title" in schema["properties"]:
             if self.meta_error:

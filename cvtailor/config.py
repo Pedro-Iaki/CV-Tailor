@@ -42,6 +42,16 @@ class Config:
     # Local server only: output-token cap per call, thinking included. Keep it at most
     # the server's context window minus the prompt (about 4.5k tokens).
     llm_max_tokens: int = 4096
+    # Careful mode (careful.py): free-text analysis, selection, one review round.
+    careful: bool = False
+    # Reasoning for careful mode's two free-text passes on a local server ("" = the
+    # model's default, which for Qwen means thinking on). None: same as llm_reasoning.
+    careful_reasoning: str | None = None
+    embed_model: str | None = None  # Ollama embedding model for relevance hints (optional)
+
+    @property
+    def worked_examples_path(self) -> Path:
+        return self.data_dir / "worked_examples.yaml"
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -79,6 +89,10 @@ class Config:
             llm_timeout=timeout,
             llm_reasoning=os.environ.get("CV_LLM_REASONING", "").strip().lower() or None,
             llm_max_tokens=max_tokens,
+            careful=os.environ.get("CV_LLM_MODE", "").strip().lower() == "careful",
+            careful_reasoning=(os.environ["CV_LLM_CAREFUL_REASONING"].strip().lower()
+                               if "CV_LLM_CAREFUL_REASONING" in os.environ else None),
+            embed_model=os.environ.get("CV_LLM_EMBED_MODEL", "").strip() or None,
         )
 
 

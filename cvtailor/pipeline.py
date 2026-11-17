@@ -114,6 +114,7 @@ class NewOptions:
     yes: bool = False
     dry_run: bool = False
     verbose: bool = False
+    careful: bool = False  # or CV_LLM_MODE=careful: analysis, selection, one review round
 
 
 @dataclass
@@ -169,6 +170,27 @@ def open_file(path: Path) -> None:
         subprocess.Popen(["open", str(path)])
     else:
         subprocess.Popen(["xdg-open", str(path)])
+
+
+def select_with_llm(ctx: "Context", text: str, master: Master, matches: dict[str, str],
+                    careful: bool, io: IO, verbose: bool = False) -> tuple[LLMSelection, Usage]:
+    """The LLM selection step: one call, or careful mode (careful.py) when asked for
+    by the option or by CV_LLM_MODE=careful."""
+    llm = ctx.get_llm()
+    if not (careful or ctx.cfg.careful):
+        return llm.select(text, master)
+    from .careful import careful_select, load_examples
+    res = careful_select(
+        llm, text, master, matches=matches,
+        examples=load_examples(ctx.cfg.worked_examples_path),
+        embed_model=ctx.cfg.embed_model, base_url=ctx.cfg.llm_base_url,
+        reasoning=ctx.cfg.careful_reasoning)
+    io.out("careful: " + "; ".join(res.notes))
+    if verbose:
+        io.out("--- analysis ---\n" + res.analysis)
+        if res.review:
+            io.out("--- review ---\n" + res.review)
+    return res.selection, res.usage
 
 
 def describe_selection(sel: Selection, master: Master, lang: str = "en") -> list[str]:
@@ -326,7 +348,7 @@ def run_new(ctx: Context, raw_text: str, opts: NewOptions, io: IO = IO()) -> New
             raise PipelineError("variant selection is invalid:\n  - " + "\n  - ".join(errors))
     else:
         try:
-            llm_sel, u = ctx.get_llm().select(text, master)
+            llm_sel, u = select_with_llm(ctx, text, master, matches, opts.careful, io, opts.verbose)
         except LLMError as e:
             raise PipelineError(str(e)) from None
         usages.append(u)
@@ -457,7 +479,8 @@ def rerender(ctx: Context, app_id: int, lang: Optional[str], io: IO = IO()) -> P
 def regen(ctx: Context, app_id: int, io: IO = IO()) -> Path:
     app = get_app(ctx, app_id)
     try:
-        llm_sel, usage = ctx.get_llm().select(app["job_description"], ctx.master)
+        text = app["job_description"]
+        llm_sel, usage = select_with_llm(ctx, text, ctx.master, match_tags(text, ctx.master), False, io)
     except LLMError as e:
         raise PipelineError(str(e)) from None
     if llm_sel.unmatched_requirements:

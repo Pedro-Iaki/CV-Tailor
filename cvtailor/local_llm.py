@@ -34,10 +34,12 @@ class LocalClient:
         # for some models). Long thinking is slow on local hardware and can run past
         # the context window.
         self.reasoning = reasoning
+        self.accepts_reasoning = True  # LLM may override reasoning per call
         self.messages = self  # so callers can write client.messages.create(...)
 
     def create(self, *, model: str, max_tokens: int, system: list[dict], messages: list[dict],
-               output_config: Optional[dict] = None, **_ignored: Any) -> SimpleNamespace:
+               output_config: Optional[dict] = None, reasoning: Optional[str] = None,
+               **_ignored: Any) -> SimpleNamespace:
         # Anthropic-only fields (cache_control, effort, tools) have no equivalent here
         # and are dropped. The cached system blocks become one system message.
         schema = (output_config or {}).get("format", {}).get("schema")
@@ -48,8 +50,9 @@ class LocalClient:
                          *messages],
             "stream": False,
         }
-        if self.reasoning:
-            body["reasoning_effort"] = self.reasoning
+        effort = reasoning if reasoning is not None else self.reasoning
+        if effort:  # "" means: the model's default
+            body["reasoning_effort"] = effort
         if schema is not None:
             body["response_format"] = {
                 "type": "json_schema",

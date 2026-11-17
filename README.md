@@ -241,6 +241,9 @@ Any short text can be one string used in both languages, or an `{en, pt}` pair. 
 | `CV_LLM_API_KEY` | | only if your local server requires a key |
 | `CV_LLM_TIMEOUT` | `600` | seconds per local call |
 | `CV_LLM_REASONING` | | local models only: sent as `reasoning_effort` (`low`, `medium`, `high`). `low` keeps thinking models fast and inside the context window |
+| `CV_LLM_MODE` | | `careful`: always use careful mode (same as `new --careful`) |
+| `CV_LLM_CAREFUL_REASONING` | | careful mode, local models: reasoning for the analysis and review passes. Empty value = the model's default (thinking on for Qwen) |
+| `CV_LLM_EMBED_MODEL` | | careful mode, Ollama only: embedding model (e.g. `bge-m3`) for "closest posting line" hints |
 | `CV_LLM_MAX_TOKENS` | `4096` | local models only: output-token cap per call, thinking included. A model that thinks past it is stopped and retried once with a request to keep it short. Keep it at most the server's context minus about 4.5k tokens for the prompt |
 | `ROUTE_THRESHOLD` | `0.6` | |
 | `CV_ALLOW_GENERATION` | `false` | enables drafted wording with item-by-item approval |
@@ -272,6 +275,10 @@ Notes:
 - Meta extraction (company, role, language) is the easiest task. Selection is harder, and drafted wording (`CV_ALLOW_GENERATION`) is the hardest: expect weaker EN/PT drafts from small models. Every draft is still reviewed by you, and the number guard still applies.
 - Prompt caching is Anthropic-only, so `cache read` stays 0, and token counts come from the server's report.
 - Qwen3 models may think before answering. A `<think>` block at the start of the answer is removed; the thinking still costs time, so a non-thinking model is faster. In a test, `qwen3:8b` with thinking off misread an English posting as Portuguese, so keep thinking on unless your GPU is too slow for it.
+
+**Careful mode** (`new --careful`) is slower and makes better choices. The model first writes a short free-text analysis: which requirements matter, which items cover them, which summary, layout and versions fit. Hints computed in code help it: items whose tags match the posting and, with `CV_LLM_EMBED_MODEL`, the posting line each item is closest to. The constrained selection then follows that analysis, and one review pass can send it back once with concrete changes. Add worked examples to `data/worked_examples.yaml` (a posting plus notes on why a hand-made CV chose what it did) to show the model the reasoning you want. Free text never reaches the CV; every selection is validated as usual.
+
+**Rate the results** with `apply.py rate`: a page on `127.0.0.1` shows each CV next to its posting, and you rate it 1 to 5 with the number keys. Ratings are blind (the setup behind a CV shows after you rate it), and the Summary averages them per setup. It shows your saved applications; add `--candidates file.jsonl` for other CVs, such as benchmark output (one JSON object per line: `key`, `job_text`, `selection`, optional `title`, `label`, `group`, `lang`, `master_path`). Ratings are stored in `applications.db`.
 
 **Check the speed first.** `ollama run qwen3:8b --verbose "Write three sentences about rivers."` prints an `eval rate`. A run of `new` produces about 1,500 tokens with thinking, so at 40 tokens/s it takes under a minute, and at 4 tokens/s about 5 minutes. Then run `ollama ps`: PROCESSOR should say `100% GPU`.
 

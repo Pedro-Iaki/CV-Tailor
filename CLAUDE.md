@@ -23,6 +23,8 @@ Implementation rules:
 - `cvtailor/mcp_server.py`: MCP tools over the same pipeline. stdout is the protocol channel, so never `print` there.
 - `cvtailor/llm.py`: Anthropic SDK calls. Structured output uses a schema built from the master (enums of real ids). The system prompt plus the master index form the cached prefix.
 - `cvtailor/choices.py`: the choice format used with local models. Bullets are ranked per owner (`{id: rank}`, so no duplicates), bullet versions become one slot plus a version pick, and conflicting skill categories become whole layouts (`anyOf`) with per-category item lists. `decode()` maps the answer back to plain ids before validation. It never repairs.
+- `cvtailor/careful.py`: careful mode (`new --careful`). Hints from tags and embeddings, a free-text analysis pass (with `data/worked_examples.yaml`), the constrained selection, then one review and revision. Free text only goes back to the model or to verbose output, never into the CV.
+- `cvtailor/ratings.py`: `apply.py rate`, a local page (127.0.0.1) for blind 1-5 ratings of CVs (applications plus JSONL candidates), stored in the `cv_ratings` table.
 - `cvtailor/local_llm.py`: `LocalClient`, used when `CV_LLM_BASE_URL` is set. It mimics `client.messages.create` over an OpenAI-compatible server (Ollama, llama.cpp, LM Studio), so `llm.py` prompts, schemas and validation are shared. Stdlib only.
 - Other modules each own one pipeline concern (see the module table in docs/DESIGN.md): `schema`, `master`, `tags`, `validate`, `route`, `variants`, `trim`, `render`, `editor`, `db`, `stats`.
 

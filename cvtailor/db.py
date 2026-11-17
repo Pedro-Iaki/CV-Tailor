@@ -119,6 +119,18 @@ MIGRATIONS: list[str] = [
     );
     ALTER TABLE applications ADD COLUMN generated_ids TEXT;
     """,
+    # 3: 1-5 quality ratings of CVs (benchmark candidates or applications), from the
+    # local rating page (apply.py rate). key is the candidate's stable id.
+    """
+    CREATE TABLE cv_ratings (
+      key TEXT PRIMARY KEY,
+      rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+      note TEXT,
+      label TEXT,
+      grp TEXT,
+      rated_at TEXT NOT NULL
+    );
+    """,
 ]
 
 JSON_COLUMNS = ("job_tags", "route_candidates", "selection", "llm_selection", "trimmed",

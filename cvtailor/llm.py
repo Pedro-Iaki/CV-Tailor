@@ -331,24 +331,34 @@ class LLM:
             self._client = anthropic.Anthropic(max_retries=2)
         return self._client
 
-    def _call(self, *, system: list[dict], user: str, schema: dict, max_tokens: int) -> Any:
-        output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": schema}}
+    def _call(self, *, system: list[dict], user: str, schema: Optional[dict], max_tokens: int,
+              reasoning: Optional[str] = None) -> Any:
+        """One call. schema=None asks for free text. reasoning overrides the local
+        server's reasoning_effort for this call (ignored by the Anthropic API)."""
+        output_config: dict[str, Any] = {}
+        if schema is not None:
+            output_config["format"] = {"type": "json_schema", "schema": schema}
         if self.effort:
             output_config["effort"] = self.effort
         if self.max_output:
             max_tokens = min(max_tokens, self.max_output)
-        kwargs = dict(
+        kwargs: dict[str, Any] = dict(
             model=self.model,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
+        if reasoning is not None and getattr(self.client, "accepts_reasoning", False):
+            kwargs["reasoning"] = reasoning
+        if output_config:
+            kwargs["output_config"] = output_config
         try:
             try:
-                return self.client.messages.create(output_config=output_config, **kwargs)
+                return self.client.messages.create(**kwargs)
             except Exception as e:  # noqa: BLE001
-                if not _is_structured_output_unsupported(e):
+                if schema is None or not _is_structured_output_unsupported(e):
                     raise
+            kwargs.pop("output_config", None)
             # Fallback for models without native structured outputs: a tool whose input
             # schema is the selection schema.
             return self.client.messages.create(
@@ -391,8 +401,17 @@ class LLM:
 
     # ------------------------------------------------------------ selection
 
-    def select(self, job_text: str, master: Master) -> tuple[LLMSelection, Usage]:
-        """Select content by id. Validates, retries once with the errors, then aborts."""
+    def write(self, system: str, user: str, max_tokens: int = 4096,
+              reasoning: Optional[str] = None) -> tuple[str, Usage]:
+        """A free-text call (no schema): analysis and review notes for careful mode.
+        The text is only ever shown to the model again or to the user, never rendered."""
+        resp = self._call(system=[{"type": "text", "text": system}], user=user, schema=None,
+                          max_tokens=max_tokens, reasoning=reasoning)
+        return _text_of(resp).strip(), Usage.from_response(resp)
+
+    def select(self, job_text: str, master: Master, context: str = "") -> tuple[LLMSelection, Usage]:
+        """Select content by id. Validates, retries once with the errors, then aborts.
+        `context` (careful mode: hints, analysis, review) follows the job description."""
         schema = build_selection_schema(master, count_limits=self.count_limits)
         prompt, index = SELECTION_SYSTEM_PROMPT, None
         if self.choices:
@@ -407,7 +426,7 @@ class LLM:
                 "cache_control": {"type": "ephemeral"},
             },
         ]
-        base_user = "JOB DESCRIPTION:\n" + job_text
+        base_user = "JOB DESCRIPTION:\n" + job_text + (f"\n\n{context.strip()}" if context.strip() else "")
         usage = Usage()
         errors: list[str] = []
         for attempt in range(2):
