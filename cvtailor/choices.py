@@ -176,6 +176,24 @@ def _ranks(keys: list[str], top: int, at_least_one: bool) -> dict[str, Any]:
     return {"anyOf": [obj(p, z) for p, z in branches]}
 
 
+def _force_zero(rank_schema: dict[str, Any], keys: set[str]) -> dict[str, Any]:
+    """A copy of a _ranks schema in which `keys` can only be 0. Branches that then
+    can't be satisfied (they required one of those keys) are dropped."""
+    def fix(obj: dict[str, Any]) -> dict[str, Any] | None:
+        props = dict(obj["properties"])
+        for k in keys & props.keys():
+            if 0 not in props[k]["enum"]:
+                return None  # this branch requires k to be ranked
+            props[k] = {"type": "integer", "enum": [0]}
+        return {**obj, "properties": props}
+    if not keys:
+        return rank_schema
+    if "anyOf" in rank_schema:
+        branches = [b for b in (fix(o) for o in rank_schema["anyOf"]) if b is not None]
+        return branches[0] if len(branches) == 1 else {"anyOf": branches}
+    return fix(rank_schema) or rank_schema
+
+
 def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
                  ch: Choices | None = None) -> dict[str, Any]:
     """Transforms the plain schema (llm.build_selection_schema) into the choice format."""
@@ -205,21 +223,30 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
     props.pop("project_ids")
     descs = (props.get("descriptions") or {}).get("properties", {})
     max_p = min(m.limits.max_projects, len(m.projects))
+    cx = alt_conflicts(m)
     projects: dict[str, Any] = {}
     for p in m.projects:
         bullets = owners.pop(p.id, None)
         desc = descs.pop(p.id, None)
-        shown: dict[str, Any] = {"rank": {"type": "integer", "enum": list(range(1, max_p + 1))}}
+        rank_on = {"rank": {"type": "integer", "enum": list(range(1, max_p + 1))}}
         off: dict[str, Any] = {"rank": {"type": "integer", "enum": [0]}}
         if bullets is not None:
-            shown["bullets"] = bullets
             keys = bullets["required"] if "required" in bullets else bullets["anyOf"][0]["required"]
             off["bullets"] = {"type": "object", "properties": {k: {"type": "integer", "enum": [0]} for k in keys},
                               "required": keys, "additionalProperties": False}
-        if desc is not None:
-            shown["description"] = desc
+        shown_shapes: list[dict[str, Any]] = []
+        if desc is None:
+            shown_shapes.append({**rank_on, **({"bullets": bullets} if bullets is not None else {})})
+        else:
             off["description"] = {"type": "string", "enum": ["default"]}
-        shapes = [off, shown] if max_p else [off]
+            # One shape per description option: bullets it already covers are forced to 0.
+            for opt in desc["enum"]:
+                shape: dict[str, Any] = dict(rank_on)
+                if bullets is not None:
+                    shape["bullets"] = _force_zero(bullets, cx.get(opt, set()))
+                shape["description"] = {"type": "string", "enum": [opt]}
+                shown_shapes.append(shape)
+        shapes = [off, *shown_shapes] if max_p else [off]
         projects[p.id] = {"anyOf": [{"type": "object", "properties": sh, "required": list(sh),
                                      "additionalProperties": False} for sh in shapes]}
     props["bullets"]["required"] = [k for k in props["bullets"]["required"] if k in owners]

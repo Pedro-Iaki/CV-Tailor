@@ -84,12 +84,16 @@ def test_schema(master_dict):
 
     # Projects: rank + bullets + description; hidden means every bullet 0 and default
     assert "project_ids" not in props and "proj-airflow-demo" not in props["bullets"]["properties"]
-    off, shown = props["projects"]["properties"]["proj-airflow-demo"]["anyOf"]
-    assert off["properties"]["rank"]["enum"] == [0] and shown["properties"]["rank"]["enum"] == [1, 2]
+    off, shown_default, shown_alt = props["projects"]["properties"]["proj-airflow-demo"]["anyOf"]
+    assert off["properties"]["rank"]["enum"] == [0] and shown_default["properties"]["rank"]["enum"] == [1, 2]
     assert all(v["enum"] == [0] for v in off["properties"]["bullets"]["properties"].values())
     assert off["properties"]["description"]["enum"] == ["default"]
-    assert shown["properties"]["description"]["enum"] == ["default", "lakehouse-desc-short"]
-    assert shown["properties"]["bullets"]["properties"]["lakehouse-dags-01"]["enum"] == [0, 1, 2]
+    # one shown shape per description; the alternative covers lakehouse-tests-02, forced to 0
+    assert shown_default["properties"]["description"]["enum"] == ["default"]
+    assert shown_default["properties"]["bullets"]["properties"]["lakehouse-tests-02"]["enum"] == [0, 1, 2]
+    assert shown_alt["properties"]["description"]["enum"] == ["lakehouse-desc-short"]
+    assert shown_alt["properties"]["bullets"]["properties"]["lakehouse-tests-02"]["enum"] == [0]
+    assert shown_alt["properties"]["bullets"]["properties"]["lakehouse-dags-01"]["enum"] == [0, 1, 2]
     assert "descriptions" not in props  # only projects had alternatives here
     no_bullets = props["projects"]["properties"]["proj-kafka-lab"]["anyOf"][1]["properties"]
     assert set(no_bullets) == {"rank"}
