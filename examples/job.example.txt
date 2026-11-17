@@ -1,0 +1,12 @@
+https://jobs.example.com/acme/senior-data-engineer
+Senior Data Engineer - Acme Pagamentos
+
+We are looking for a Senior Data Engineer to build and operate our lakehouse on
+Databricks and Azure. You will design PySpark pipelines, model data in Delta Lake,
+orchestrate ingestion with Azure Data Factory, and improve CI/CD for data jobs.
+
+Requirements:
+- 4+ years with Spark (PySpark / Spark SQL) and Delta Lake
+- Azure (ADF, ADLS), Databricks
+- Python, SQL, testing with pytest
+- Experience with dbt and Kafka is a plus
