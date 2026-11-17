@@ -1,0 +1,14 @@
+{
+  "summary_id": "sum-platform",
+  "bullets": {
+    "job-acme": ["acme-dbx-pipeline-01", "acme-delta-02", "acme-adf-03", "acme-cicd-04", "acme-cost-05"],
+    "job-datacorp": ["datacorp-airflow-03", "datacorp-dbt-01", "datacorp-sql-02"],
+    "job-intern": ["intern-python-01"]
+  },
+  "project_ids": ["proj-airflow-demo", "proj-kafka-lab"],
+  "skill_category_order": {
+    "hands_on": ["skills-processing", "skills-platform", "skills-languages", "skills-modeling"],
+    "working": ["skills-working-orchestration", "skills-working-streaming"],
+    "familiar": ["skills-familiar-other"]
+  }
+}

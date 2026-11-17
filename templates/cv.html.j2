@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="{{ 'pt-BR' if lang == 'pt' else 'en' }}">
+<head>
+<meta charset="utf-8">
+<title>{{ profile.name }}</title>
+<style>
+{{ css | safe }}
+</style>
+</head>
+<body>
+{% macro link_list(items) %}{% for l in items %}<a href="{{ l.url }}">{{ l.label }}</a>{% if not loop.last %}{{ t.sep }}{% endif %}{% endfor %}{% endmacro %}
+{% macro bullet_list(items) %}
+{% if items %}
+<ul>
+  {% for b in items %}
+  <li>{{ b }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endmacro %}
+<header>
+  <h1>{{ profile.name }}</h1>
+  {% if profile.headline %}
+  <p class="headline">{{ profile.headline }}</p>
+  {% endif %}
+  {% if profile.contact or profile.links %}
+  <p class="contact">{{ profile.contact | join(t.sep) }}{% if profile.contact and profile.links %}{{ t.sep }}{% endif %}{{ link_list(profile.links) }}</p>
+  {% endif %}
+</header>
+{% for section in sections %}
+
+{% if section == "summary" %}
+<section>
+  <h2>{{ t.headings.summary }}</h2>
+  <p class="summary">{{ summary }}</p>
+</section>
+
+{% elif section == "projects" %}
+<section>
+  <h2>{{ projects_heading }}</h2>
+  {% for p in projects %}
+  <div class="entry">
+    <p class="entry-head"><strong>{{ p.name }}</strong>{% if p.dates %}<span class="dates">{{ p.dates }}</span>{% endif %}</p>
+    {% if p.links %}
+    <p class="entry-links">{{ link_list(p.links) }}</p>
+    {% endif %}
+    {% if p.description %}
+    <p class="entry-desc">{{ p.description }}</p>
+    {% endif %}
+    {{ bullet_list(p.bullets) }}
+  </div>
+  {% endfor %}
+</section>
+
+{% elif section == "experience" %}
+<section>
+  <h2>{{ t.headings.experience }}</h2>
+  {% for job in experience %}
+  <div class="entry">
+    <p class="entry-head"><strong>{{ job.title }}{% if job.company %}{{ t.title_sep }}{{ job.company }}{% endif %}</strong>{% if job.location %}{{ t.sep }}{{ job.location }}{% endif %}<span class="dates">{{ job.dates }}</span></p>
+    {% if job.description %}
+    <p class="entry-desc">{{ job.description }}</p>
+    {% endif %}
+    {{ bullet_list(job.bullets) }}
+  </div>
+  {% endfor %}
+</section>
+
+{% elif section == "education" %}
+<section>
+  <h2>{{ t.headings.education }}</h2>
+  {% for e in education %}
+  <p class="entry-head edu"><span><strong>{{ e.degree }}</strong>{{ t.title_sep }}{{ e.institution }}{% if e.note %}{{ t.sep }}{{ e.note }}{% endif %}</span><span class="dates">{{ e.dates }}</span></p>
+  {% for d in e.details %}
+  <p class="edu-detail">{{ d }}</p>
+  {% endfor %}
+  {% endfor %}
+</section>
+
+{% elif section == "skills" %}
+<section>
+  <h2>{{ t.headings.skills }}</h2>
+  <ul class="skills">
+    {% for s in skill_lines %}
+    <li><strong>{{ s.label }}:</strong> {{ s.text }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endfor %}
+</body>
+</html>

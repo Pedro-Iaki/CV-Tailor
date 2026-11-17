@@ -1,0 +1,43 @@
+# Fixed strings used by the CV template. Everything rendered that is not from
+# master.yaml comes from here.
+# date_format placeholders: {month} (name from `months`), {mm} (01-12), {year}.
+en:
+  headings:
+    summary: Summary
+    experience: Experience
+    project: Project
+    projects: Projects
+    skills: Skills
+    education: Education
+  skills:
+    hands_on: Hands-on
+    working: Working knowledge
+    familiar: Familiar with
+  present: Present
+  in_progress: In progress
+  expected: expected
+  months: [Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec]
+  date_format: "{mm}/{year}"
+  range_sep: " – "
+  sep: " · "
+  title_sep: ", "
+pt:
+  headings:
+    summary: Resumo
+    experience: Experiência
+    project: Projeto
+    projects: Projetos
+    skills: Habilidades
+    education: Formação
+  skills:
+    hands_on: Experiência prática
+    working: Conhecimento funcional
+    familiar: Familiaridade com
+  present: Atual
+  in_progress: Em andamento
+  expected: previsão
+  months: [jan., fev., mar., abr., maio, jun., jul., ago., set., out., nov., dez.]
+  date_format: "{mm}/{year}"
+  range_sep: " – "
+  sep: " · "
+  title_sep: ", "

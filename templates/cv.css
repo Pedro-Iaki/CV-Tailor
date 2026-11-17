@@ -1,0 +1,93 @@
+/* ATS-safe: single column, real text, no tables, icons or images.
+   Dates sit on the entry's own line, pushed right with flexbox, so text extraction
+   still reads "title ... dates" in order.
+
+   Measurements match the source CV (a Google Docs export): Calibri 9.5pt with an
+   11.6pt line, 16mm side margins, bullets at 6pt and their text at 17.3pt. Carlito
+   is a free font with Calibri's metrics, for machines without Calibri. */
+@page {
+  size: A4;
+  margin: 36pt 45.3pt;
+}
+
+:root {
+  --accent: #e84e2f;
+  --link: #1f4e9e;
+  --text: #000;
+}
+
+html {
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+  font-size: 9.5pt;
+  line-height: 1.221;
+  color: var(--text);
+}
+
+body { margin: 0; }
+
+p { margin: 0; }
+
+h1 {
+  font-size: 20pt;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--accent);
+  margin: 0;
+}
+
+.headline {
+  font-size: 12pt;
+  font-weight: 700;
+  margin: 0 0 1.7pt 0;
+}
+
+h2 {
+  font-size: 10.5pt;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  border-bottom: 1pt solid var(--accent);
+  padding-bottom: 1pt;
+  margin: 6.2pt 0 2.3pt 0;
+}
+
+a {
+  color: var(--link);
+  text-decoration: underline;
+}
+
+.entry { margin-bottom: 5pt; }
+
+.entry-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8pt;
+  margin-bottom: 2pt;
+}
+.entry-head > strong,
+.entry-head.edu > span:first-child { flex: 1; }
+.dates { white-space: nowrap; margin-left: auto; }
+
+.entry-links,
+.entry-desc { margin-bottom: 2pt; }
+
+/* education detail lines (e.g. coursework) */
+.edu-detail { font-style: italic; margin-top: -1pt; margin-bottom: 2pt; }
+
+/* The bullet is drawn with ::before, not ::marker: WeasyPrint can't lay out a
+   ::marker with custom content. Glyph at 6pt, text at 17.3pt, as in the source. */
+ul {
+  margin: 0;
+  padding-left: 17.3pt;
+  list-style: none;
+}
+li { margin: 0; }
+li::before {
+  content: "\25CF";
+  display: inline-block;
+  width: 11.3pt;
+  margin-left: -11.3pt;
+  font-family: Arial, sans-serif;
+  line-height: 0;  /* Arial's metrics must not make bulleted lines taller */
+}
