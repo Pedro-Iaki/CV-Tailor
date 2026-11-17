@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
+from . import choices
 from .master import build_llm_index
 from .schema import TIERS, LLMSelection, Master, Meta
 from .validate import validate_selection
@@ -299,14 +300,16 @@ def _text_of(resp: Any) -> str:
 
 class LLM:
     """Calls go to the Anthropic API, or to `client` when one is given (for example a
-    local_llm.LocalClient). count_limits puts the bullet limits into the schema."""
+    local_llm.LocalClient). count_limits puts the bullet limits into the schema;
+    choices uses the choice format of choices.py for the selection call."""
 
     def __init__(self, model: str, effort: Optional[str] = "low", client: Any = None,
-                 count_limits: bool = False):
+                 count_limits: bool = False, choices: bool = False):
         self.model = model
         self.effort = effort
         self._client = client
         self.count_limits = count_limits
+        self.choices = choices
 
     @property
     def client(self) -> Any:
@@ -379,11 +382,16 @@ class LLM:
     def select(self, job_text: str, master: Master) -> tuple[LLMSelection, Usage]:
         """Select content by id. Validates, retries once with the errors, then aborts."""
         schema = build_selection_schema(master, count_limits=self.count_limits)
+        prompt, index = SELECTION_SYSTEM_PROMPT, None
+        if self.choices:
+            ch = choices.analyse(master)
+            schema = choices.build_schema(master, schema, self.count_limits, ch)
+            prompt, index = choices.system_prompt(prompt), choices.build_index(master, ch)
         system = [
-            {"type": "text", "text": SELECTION_SYSTEM_PROMPT},
+            {"type": "text", "text": prompt},
             {
                 "type": "text",
-                "text": "MASTER RESUME INDEX (JSON):\n" + build_llm_index(master),
+                "text": "MASTER RESUME INDEX (JSON):\n" + (index or build_llm_index(master)),
                 "cache_control": {"type": "ephemeral"},
             },
         ]
@@ -400,7 +408,10 @@ class LLM:
             resp = self._call(system=system, user=user, schema=schema, max_tokens=16000)
             usage = usage.add(Usage.from_response(resp))
             try:
-                sel = LLMSelection.model_validate(json.loads(_text_of(resp)))
+                data = json.loads(_text_of(resp))
+                if self.choices and isinstance(data, dict):
+                    data = choices.decode(data)
+                sel = LLMSelection.model_validate(data)
             except json.JSONDecodeError as e:
                 errors = [f"output was not valid JSON: {e}"]
                 continue

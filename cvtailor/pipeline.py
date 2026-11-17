@@ -87,8 +87,9 @@ class Context:
         if self.llm is None:
             if self.cfg.llm_base_url:
                 from .local_llm import LocalClient
-                client = LocalClient(self.cfg.llm_base_url, self.cfg.llm_api_key, self.cfg.llm_timeout)
-                self.llm = LLM(self.cfg.model, None, client=client, count_limits=True)
+                client = LocalClient(self.cfg.llm_base_url, self.cfg.llm_api_key, self.cfg.llm_timeout,
+                                     self.cfg.llm_reasoning)
+                self.llm = LLM(self.cfg.model, None, client=client, count_limits=True, choices=True)
             else:
                 self.llm = LLM(self.cfg.model, self.cfg.effort)
         return self.llm

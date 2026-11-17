@@ -240,6 +240,7 @@ Any short text can be one string used in both languages, or an `{en, pt}` pair. 
 | `CV_LLM_BASE_URL` | | set it to use a local model instead of the Anthropic API (see below) |
 | `CV_LLM_API_KEY` | | only if your local server requires a key |
 | `CV_LLM_TIMEOUT` | `600` | seconds per local call |
+| `CV_LLM_REASONING` | | local models only: sent as `reasoning_effort` (`low`, `medium`, `high`). `low` keeps thinking models fast and inside the context window |
 | `ROUTE_THRESHOLD` | `0.6` | |
 | `CV_ALLOW_GENERATION` | `false` | enables drafted wording with item-by-item approval |
 | `CV_PDF_NAME` | `{name}_CV_{role}_{LANG}` | also accepts `{company}` and `{lang}` |
@@ -264,7 +265,7 @@ CV_LLM_BASE_URL=http://localhost:11434/v1   # LM Studio: http://localhost:1234/v
 CV_MODEL=qwen3:8b
 ```
 
-The model's job is the same as with Claude: it only picks and orders ids. The server enforces the schema while decoding, so the model can only output ids that exist in your master, and with a local model the schema also carries the per-job and per-project bullet counts and the project limit. The total-bullet limit and the other selection rules are checked in code as usual; an invalid answer is retried once with the errors, then the run stops. Small models get rejected more often, so if `new --dry-run` keeps failing validation, try a bigger model (14B or more) or raise `max_total_bullets`.
+The model's job is the same as with Claude: it only picks and orders ids. The server enforces the schema while decoding, so the model can only output ids that exist in your master, and with a local model the schema also carries the per-job and per-project bullet counts and the project limit. Local models also get the choice format (`cvtailor/choices.py`): bullets that are versions of each other (`alt_of`) appear as one item with `versions`, and the model picks the wording separately; skill categories that conflict are offered as whole layouts, so a mixed layout can't be expressed at all; and the answer starts with a short `key_requirements` list that the model uses as a scratchpad. The answer is mapped back to plain ids before validation. The total-bullet limit and the other selection rules are checked in code as usual; an invalid answer is retried once with the errors, then the run stops. Small models get rejected more often, so if `new --dry-run` keeps failing validation, try a bigger model (14B or more) or raise `max_total_bullets`.
 
 Notes:
 - Meta extraction (company, role, language) is the easiest task. Selection is harder, and drafted wording (`CV_ALLOW_GENERATION`) is the hardest: expect weaker EN/PT drafts from small models. Every draft is still reviewed by you, and the number guard still applies.

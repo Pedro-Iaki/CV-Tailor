@@ -1,0 +1,252 @@
+"""Choice format for the selection call: alternatives become single choices.
+
+The plain schema (llm.build_selection_schema) lists every id as an enum and leaves the
+"never together" rules to the validator. Small local models break those rules often:
+they pick two versions of one bullet, or mix two skill layouts. This format makes
+most of those mistakes impossible to express:
+
+- A group of bullet versions (bullets that are all alternatives of each other) is
+  one slot. The model lists the slot id (the group's first id) under "bullets" and
+  picks the wording in "bullet_versions".
+- Skill categories that conflict are offered as whole layouts: "skills" is one of
+  several object shapes (JSON schema anyOf), each allowing only the categories of one
+  compatible layout. Grammar-constrained decoding (Ollama, llama.cpp) enforces it.
+- "key_requirements" comes first: a few words per requirement, a cheap scratchpad
+  for models that think little or not at all. It is dropped after parsing.
+
+decode() turns the answer back into a plain selection dict, a fixed mapping that
+neither adds nor removes ids. The result is validated like any other selection.
+Used only for local servers; the Anthropic path keeps the plain format.
+"""
+
+from __future__ import annotations
+
+import copy
+import itertools
+import json
+from dataclasses import dataclass
+from typing import Any
+
+from .master import alt_conflicts, build_llm_index, item_index
+from .schema import TIERS, Master
+
+MAX_LAYOUTS = 24  # above this, skills fall back to the plain per-tier arrays
+_MAX_COMPONENT = 12  # skill conflict groups larger than this are not enumerated
+
+SCRATCHPAD = {"type": "array", "items": {"type": "string"}, "maxItems": 5}
+
+
+@dataclass
+class Choices:
+    groups: dict[str, list[str]]  # slot id -> bullet ids (all mutually exclusive), slot id first
+    layouts: list[dict[str, list[str]]]  # each: tier -> allowed category ids, master order
+
+
+def analyse(m: Master) -> Choices:
+    cx = alt_conflicts(m)
+    idx = item_index(m)
+    order = {id_: i for i, id_ in enumerate(idx)}
+
+    # Bullet groups: connected bullets of one owner in which every pair conflicts.
+    # Approved merges conflict with each source, but the sources may still go
+    # together, so those groups are not cliques and stay with the validator.
+    groups: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    for id_, it in idx.items():
+        if it.kind != "bullet" or id_ in seen or not cx.get(id_):
+            continue
+        comp, todo = set(), [id_]
+        while todo:
+            x = todo.pop()
+            if x in comp:
+                continue
+            comp.add(x)
+            todo += [y for y in cx.get(x, ()) if idx[y].kind == "bullet" and idx[y].parent == it.parent]
+        seen |= comp
+        members = sorted(comp, key=order.get)
+        if len(members) > 1 and all(b in cx[a] for a, b in itertools.combinations(members, 2)):
+            groups[members[0]] = members
+
+    # Skill layouts: per group of conflicting categories, every maximal set of
+    # categories that may go together; layouts are the combinations across groups.
+    cats = [id_ for id_, it in idx.items() if it.kind == "skill_category"]
+    free = [c for c in cats if not cx.get(c)]
+    comps: list[list[str]] = []
+    seen = set()
+    for c in cats:
+        if c in seen or not cx.get(c):
+            continue
+        comp, todo = set(), [c]
+        while todo:
+            x = todo.pop()
+            if x not in comp:
+                comp.add(x)
+                todo += [y for y in cx[x] if idx[y].kind == "skill_category"]
+        seen |= comp
+        comps.append(sorted(comp, key=order.get))
+    options: list[list[list[str]]] = []
+    for comp in comps:
+        if len(comp) > _MAX_COMPONENT:
+            return Choices(groups, [])
+        sets = [set(s) for n in range(len(comp), 0, -1) for s in itertools.combinations(comp, n)
+                if not any(b in cx[a] for a, b in itertools.combinations(s, 2))]
+        maximal = [s for s in sets if not any(s < t for t in sets)]
+        options.append([sorted(s, key=order.get) for s in maximal])
+    combos = list(itertools.product(*options)) if comps else []
+    if len(combos) > MAX_LAYOUTS:
+        return Choices(groups, [])
+    layouts = []
+    for combo in combos:
+        allowed = set(free).union(*combo)
+        layouts.append({t: [c.id for c in m.skills.tier(t) if c.id in allowed] for t in TIERS})
+    return Choices(groups, layouts)
+
+
+def layout_id(i: int) -> str:
+    return f"layout-{i + 1}"
+
+
+# ---------------------------------------------------------------- index
+
+def build_index(m: Master, ch: Choices | None = None) -> str:
+    """The plain index, with bullet groups shown as one item with "versions" and the
+    skill layouts listed. Limits come first."""
+    ch = ch or analyse(m)
+    idx = json.loads(build_llm_index(m))
+    member_of = {b: slot for slot, ms in ch.groups.items() for b in ms}
+
+    def regroup(bullets: list[dict]) -> list[dict]:
+        by_id = {b["id"]: b for b in bullets}
+        out = []
+        for b in bullets:
+            slot = member_of.get(b["id"])
+            if slot is None:
+                out.append(b)
+            elif slot == b["id"]:
+                versions = []
+                for v in ch.groups[slot]:
+                    v = dict(by_id[v])
+                    outside = [x for x in v.pop("never_with", []) if x not in ch.groups[slot]]
+                    versions.append(v | ({"never_with": outside} if outside else {}))
+                out.append({"id": slot, "versions": versions})
+        return out
+
+    for key in ("jobs", "projects", "education_details"):
+        for o in idx[key]:
+            o["bullets"] = regroup(o["bullets"])
+    out: dict[str, Any] = {"limits": idx.pop("limits"), **idx}
+    if ch.layouts:
+        for c in out["skill_categories"]:
+            c.pop("never_with", None)
+        out["skill_layouts"] = [{"id": layout_id(i), **{t: ids for t, ids in lay.items() if ids}}
+                                for i, lay in enumerate(ch.layouts)]
+    return json.dumps(out, ensure_ascii=False, separators=(",", ":"))
+
+
+# ---------------------------------------------------------------- schema
+
+def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
+                 ch: Choices | None = None) -> dict[str, Any]:
+    """Transforms the plain schema (llm.build_selection_schema) into the choice format."""
+    ch = ch or analyse(m)
+    s = copy.deepcopy(plain)
+    props = s["properties"]
+    hidden = {b for ms in ch.groups.values() for b in ms[1:]}
+    for p in props["bullets"]["properties"].values():
+        if "enum" in p["items"]:
+            p["items"]["enum"] = [b for b in p["items"]["enum"] if b not in hidden]
+            if "maxItems" in p:
+                p["maxItems"] = min(p["maxItems"], len(p["items"]["enum"]))
+                p["minItems"] = min(p["minItems"], p["maxItems"])
+
+    new: dict[str, Any] = {"key_requirements": SCRATCHPAD, "summary_id": props.pop("summary_id")}
+    if ch.groups:
+        new["bullet_versions"] = {
+            "type": "object",
+            "properties": {slot: {"type": "string", "enum": ms} for slot, ms in ch.groups.items()},
+            "required": list(ch.groups),
+            "additionalProperties": False,
+        }
+    new["bullets"] = props.pop("bullets")
+    new["project_ids"] = props.pop("project_ids")
+    skills_key = "skill_category_order"
+    if ch.layouts:
+        props.pop("skill_category_order")
+        skills_key = "skills"
+        branches = []
+        for i, lay in enumerate(ch.layouts):
+            tiers = {}
+            for t in TIERS:
+                ids = lay[t]
+                arr: dict[str, Any] = ({"type": "array", "items": {"type": "string", "enum": ids}}
+                                       if ids else {"type": "array", "items": {"type": "string"}})
+                if count_limits:
+                    arr = {**arr, "minItems": 0, "maxItems": len(ids)}
+                tiers[t] = arr
+            branches.append({
+                "type": "object",
+                "properties": {"layout": {"type": "string", "enum": [layout_id(i)]}, **tiers},
+                "required": ["layout", *TIERS],
+                "additionalProperties": False,
+            })
+        new["skills"] = {"anyOf": branches}
+    else:
+        new[skills_key] = props.pop("skill_category_order")
+    new.update(props)  # descriptions (if any), unmatched_requirements, suggestions
+    s["properties"] = new
+    s["required"] = list(new)  # everything, in the order the model should write it
+    return s
+
+
+# ---------------------------------------------------------------- decode
+
+def decode(data: dict[str, Any]) -> dict[str, Any]:
+    """Choice-format answer -> plain selection dict. Never adds or drops an id; it only
+    swaps each slot id for the version picked for it."""
+    d = dict(data)
+    d.pop("key_requirements", None)
+    versions = d.pop("bullet_versions", None) or {}
+    if isinstance(d.get("bullets"), dict) and isinstance(versions, dict):
+        d["bullets"] = {o: [versions.get(b, b) if isinstance(b, str) else b for b in (ids or [])]
+                        for o, ids in d["bullets"].items()}
+    if "skills" in d:
+        skills = d.pop("skills") or {}
+        d["skill_category_order"] = {t: skills.get(t) or [] for t in TIERS} if isinstance(skills, dict) else skills
+    return d
+
+
+# ---------------------------------------------------------------- prompt
+
+def system_prompt(base: str) -> str:
+    """The plain selection prompt with the alternatives rule rewritten for this format."""
+    old = _OLD_RULE
+    if old not in base:  # pragma: no cover - guarded by a test
+        raise RuntimeError("selection prompt changed; update choices._OLD_RULE")
+    return base.replace(old, _NEW_RULE).replace(_OLD_INTRO, _NEW_INTRO)
+
+
+_OLD_RULE = """\
+- Some items are alternative versions of each other: an item's "never_with" lists
+  the ids it must never be selected together with (anywhere in the selection). Pick
+  the version that fits the job best. For skills, alternatives are whole layouts:
+  either the categories on one side or the other, never a mix.
+"""
+
+_NEW_RULE = """\
+- A bullet with "versions" is ONE bullet written in several ways. To use it, list its
+  "id" under "bullets" like any other bullet, and pick the wording that fits the job
+  best under "bullet_versions" (every such bullet needs a pick there, used or not).
+- An item may list "never_with": ids it must never be selected together with.
+- Skills: choose ONE entry of "skill_layouts" and put its id in skills.layout. Then
+  list only that layout's categories, each in its own tier, most relevant first.
+  You may leave out categories that do not help. Pick the layout whose categories
+  cover the job's requirements best. A layout with a "working" or "familiar" tier
+  lists some skills at a lower experience level: prefer it when the job asks for
+  skills that only appear there, rather than leaving them out.
+"""
+
+_OLD_INTRO = "Hard rules:\n"
+_NEW_INTRO = (
+    "First, under \"key_requirements\", write the 3 to 5 most important requirements of the\n"
+    "job in a few words each. Base every choice on them.\n\nHard rules:\n"
+)

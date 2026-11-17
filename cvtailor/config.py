@@ -38,6 +38,7 @@ class Config:
     llm_base_url: str | None = None  # set: use a local OpenAI-compatible server instead of Anthropic
     llm_api_key: str | None = None
     llm_timeout: float = 600.0
+    llm_reasoning: str | None = None  # local server only: reasoning_effort (low/medium/high)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -69,6 +70,7 @@ class Config:
             llm_base_url=os.environ.get("CV_LLM_BASE_URL", "").strip() or None,
             llm_api_key=os.environ.get("CV_LLM_API_KEY", "").strip() or None,
             llm_timeout=timeout,
+            llm_reasoning=os.environ.get("CV_LLM_REASONING", "").strip().lower() or None,
         )
 
 

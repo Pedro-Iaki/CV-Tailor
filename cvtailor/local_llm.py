@@ -25,10 +25,15 @@ _THINK = re.compile(r"^\s*<think>.*?</think>\s*", re.DOTALL)
 
 
 class LocalClient:
-    def __init__(self, base_url: str, api_key: Optional[str] = None, timeout: float = 600.0):
+    def __init__(self, base_url: str, api_key: Optional[str] = None, timeout: float = 600.0,
+                 reasoning: Optional[str] = None):
         self.url = base_url.rstrip("/") + "/chat/completions"
         self.api_key = api_key
         self.timeout = timeout
+        # Sent as reasoning_effort ("low", "medium", "high"; Ollama also takes "none"
+        # for some models). Long thinking is slow on local hardware and can run past
+        # the context window.
+        self.reasoning = reasoning
         self.messages = self  # so callers can write client.messages.create(...)
 
     def create(self, *, model: str, max_tokens: int, system: list[dict], messages: list[dict],
@@ -43,6 +48,8 @@ class LocalClient:
                          *messages],
             "stream": False,
         }
+        if self.reasoning:
+            body["reasoning_effort"] = self.reasoning
         if schema is not None:
             body["response_format"] = {
                 "type": "json_schema",
