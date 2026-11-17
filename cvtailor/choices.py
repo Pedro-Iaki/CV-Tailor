@@ -145,6 +145,24 @@ def build_index(m: Master, ch: Choices | None = None) -> str:
 
 # ---------------------------------------------------------------- schema
 
+def _ranks(keys: list[str], top: int, at_least_one: bool) -> dict[str, Any]:
+    """An object giving every key a rank, 0 (left out) to `top`. Object keys can't
+    repeat, so nothing can be listed twice. With at_least_one, one anyOf branch per
+    key requires that key to be ranked, so the grammar guarantees one pick."""
+    def obj(required_pick: str | None) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {k: {"type": "integer",
+                               "enum": list(range(1 if k == required_pick else 0, top + 1))}
+                           for k in keys},
+            "required": list(keys),
+            "additionalProperties": False,
+        }
+    if at_least_one and keys and top >= 1:
+        return {"anyOf": [obj(k) for k in keys]}
+    return obj(None)
+
+
 def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
                  ch: Choices | None = None) -> dict[str, Any]:
     """Transforms the plain schema (llm.build_selection_schema) into the choice format."""
@@ -157,15 +175,8 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
         if "enum" not in p["items"]:
             continue
         ids = [b for b in p["items"]["enum"] if b not in hidden]
-        # One rank per bullet (0 = left out, 1 = first...). Object keys cannot repeat,
-        # so a bullet can't be listed twice; ranks are capped at the owner's maximum.
         top = min(p.get("maxItems", len(ids)), len(ids))
-        owners[owner] = {
-            "type": "object",
-            "properties": {b: {"type": "integer", "enum": list(range(top + 1))} for b in ids},
-            "required": ids,
-            "additionalProperties": False,
-        }
+        owners[owner] = _ranks(ids, top, at_least_one=p.get("minItems", 0) >= 1)
 
     new: dict[str, Any] = {"key_requirements": SCRATCHPAD, "summary_id": props.pop("summary_id")}
     if ch.groups:
@@ -192,13 +203,12 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
                 if count_limits:
                     arr = {**arr, "minItems": 0, "maxItems": len(ids)}
                 tiers[t] = arr
-            # Per category: its own items only (exact English text), reordered or trimmed.
+            # Per category: a rank for each of its own items (exact English text), so
+            # items can be dropped (0) or reordered but never repeated or moved.
             item_props = {}
             for cid in (c for t in TIERS for c in lay[t]):
                 own = [skill_item_text(x, "en") for x in cats[cid].items]
-                item_props[cid] = {"type": "array", "items": {"type": "string", "enum": own}}
-                if count_limits:
-                    item_props[cid] |= {"minItems": 1, "maxItems": len(own)}
+                item_props[cid] = _ranks(own, len(own), at_least_one=False)
             branches.append({
                 "type": "object",
                 "properties": {"layout": {"type": "string", "enum": [layout_id(i)]}, **tiers,
@@ -243,7 +253,8 @@ def decode(data: dict[str, Any], master: Master | None = None) -> dict[str, Any]
             chosen = {c for t in TIERS for c in order[t]}
             full = ({c.id: [skill_item_text(x, "en") for x in c.items] for t in TIERS for c in master.skills.tier(t)}
                     if master is not None else {})
-            d["skill_items"] = {cid: texts for cid, texts in items.items()
+            ranked = {cid: _ranked(v) for cid, v in items.items()}
+            d["skill_items"] = {cid: texts for cid, texts in ranked.items()
                                 if cid in chosen and texts != full.get(cid)}
     return d
 
@@ -281,7 +292,7 @@ _OLD_RULE = """\
 _NEW_RULE = """\
 - Under "bullets", every job, project and education entry gives EACH of its bullets a
   number: 0 leaves it out, 1 puts it first, 2 second, and so on. Use each number at
-  most once per entry.
+  most once per entry. Every job needs at least one bullet.
 - A bullet with "versions" is ONE bullet written in several ways. To use it, number
   its "id" under "bullets" like any other bullet, and pick the wording that fits the
   job best under "bullet_versions" (every such bullet needs a pick there, used or not).
@@ -292,9 +303,9 @@ _NEW_RULE = """\
   cover the job's requirements best. A layout with a "working" or "familiar" tier
   lists some skills at a lower experience level: prefer it when the job asks for
   skills that only appear there, rather than leaving them out.
-- Under skills.items, give every category of the chosen layout its skills, most
-  relevant to the job first. Leave out skills that do not help this job, but keep
-  at least one. A skill can only appear in its own category.
+- Under skills.items, every category of the chosen layout gives EACH of its skills a
+  number the same way: 0 leaves it out, 1 puts it first, and so on, most relevant
+  to the job first. Keep at least one skill per category you list.
 """
 
 _OLD_INTRO = "Hard rules:\n"

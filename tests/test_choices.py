@@ -61,14 +61,20 @@ def test_schema(master_dict):
     s = choices.build_schema(m, plain, count_limits=True)
     props = s["properties"]
     assert list(props)[:2] == ["key_requirements", "summary_id"] and s["required"] == list(props)
-    acme_schema = props["bullets"]["properties"]["job-acme"]
-    acme = acme_schema["required"]
+    # Jobs: one rank per bullet (keys can't repeat), ranks capped at max_bullets_per_job
+    # (5), and one anyOf branch per bullet that requires it, so at least one is picked.
+    branches = props["bullets"]["properties"]["job-acme"]["anyOf"]
+    acme = branches[0]["required"]
+    assert len(branches) == len(acme)
     assert "acme-dbx-pipeline-01" in acme and not {"acme-dbx-short-01b", "acme-dbx-short-01c"} & set(acme)
-    # one rank per bullet: keys can't repeat; ranks capped at max_bullets_per_job (5)
-    assert acme_schema["type"] == "object" and acme_schema["additionalProperties"] is False
-    assert acme_schema["properties"]["acme-delta-02"] == {"type": "integer", "enum": [0, 1, 2, 3, 4, 5]}
-    proj = props["bullets"]["properties"]["proj-airflow-demo"]["properties"]["lakehouse-dags-01"]
-    assert proj["enum"] == [0, 1, 2]  # project with 2 bullets
+    for b, branch in zip(acme, branches):
+        assert branch["additionalProperties"] is False
+        assert branch["properties"][b]["enum"] == [1, 2, 3, 4, 5]
+        others = [k for k in acme if k != b]
+        assert all(branch["properties"][k]["enum"] == [0, 1, 2, 3, 4, 5] for k in others)
+    # Projects are optional: a plain rank object, everything may be 0
+    proj = props["bullets"]["properties"]["proj-airflow-demo"]
+    assert "anyOf" not in proj and proj["properties"]["lakehouse-dags-01"]["enum"] == [0, 1, 2]
     assert props["bullet_versions"]["properties"] == {"acme-dbx-pipeline-01": {"type": "string", "enum": GROUP}}
     assert "skill_category_order" not in props
     branches = props["skills"]["anyOf"]
@@ -241,15 +247,16 @@ def test_skill_items_in_schema_and_decode(master_dict):
     branch = next(b for b in s["properties"]["skills"]["anyOf"]
                   if "skills-flat" in b["properties"]["hands_on"]["items"]["enum"])
     items = branch["properties"]["items"]["properties"]
-    assert items["skills-flat"]["items"]["enum"] == ["PySpark", "Databricks", "Azure"]
-    assert (items["skills-flat"]["minItems"], items["skills-flat"]["maxItems"]) == (1, 3)
+    flat = items["skills-flat"]
+    assert flat["required"] == ["PySpark", "Databricks", "Azure"]  # its own items only, each once
+    assert flat["properties"]["Azure"]["enum"] == [0, 1, 2, 3]
     assert "skills-processing" not in items  # not part of this layout
 
     out = choices.decode({"summary_id": "s", "bullets": {}, "skills": {
         "layout": "layout-5", "hands_on": ["skills-flat"], "working": [], "familiar": [], "languages": [],
-        "items": {"skills-flat": ["Azure", "PySpark"],                     # kept: a real choice
-                  "skills-modeling": ["dbt"],                              # dropped: category not listed
-                  "skills-languages": ["Python", "SQL"]}}}, m)             # dropped: same as master
+        "items": {"skills-flat": {"PySpark": 2, "Databricks": 0, "Azure": 1},   # kept: a real choice
+                  "skills-modeling": {"dbt": 1},                                # dropped: category not listed
+                  "skills-languages": {"Python": 1, "SQL": 2}}}}, m)            # dropped: same as master
     assert out["skill_items"] == {"skills-flat": ["Azure", "PySpark"]}
 
 
