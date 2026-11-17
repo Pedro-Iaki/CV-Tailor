@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cv-tailor": {
+      "type": "stdio",
+      "command": ".venv/Scripts/python.exe",
+      "args": ["-m", "cvtailor.mcp_server"]
+    }
+  }
+}
