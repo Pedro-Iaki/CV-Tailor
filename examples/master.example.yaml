@@ -1,0 +1,194 @@
+# Example master file. Copy to data/master.yaml and replace with your own content.
+# Every word in a generated CV comes from this file (plus templates/i18n.yaml).
+
+profile:
+  name: "Ana Souza"
+  headline: { en: "Data Engineer", pt: "Engenheira de Dados" }
+  email: "ana.souza@example.com"
+  phone: "+55 11 90000-0000"
+  location: "São Paulo, Brazil"
+  links:
+    # label is the visible text; the PDF links it to url
+    - { label: "github.com/example", url: "https://github.com/example" }
+    - { label: "linkedin.com/in/example", url: "https://linkedin.com/in/example" }
+
+summaries:
+  - id: sum-platform
+    tags: [databricks, spark, azure, pipelines, delta]
+    en: "Data engineer with 4 years building batch and streaming pipelines on Databricks and Azure, focused on reliable, well-tested data platforms."
+    pt: "Engenheira de dados com 4 anos construindo pipelines batch e streaming em Databricks e Azure, com foco em plataformas de dados confiáveis e testadas."
+  - id: sum-analytics
+    tags: [sql, dbt, analytics, data-modeling]
+    en: "Data engineer who bridges engineering and analytics: dimensional models, SQL performance and self-service datasets for business teams."
+    pt: "Engenheira de dados que une engenharia e analytics: modelos dimensionais, performance de SQL e datasets self-service para áreas de negócio."
+
+jobs:
+  - id: job-acme
+    company: "Acme Pagamentos"
+    title: { en: "Data Engineer", pt: "Engenheira de Dados" }
+    start: "2023-01"
+    end: null
+    location: "Remote"
+    description:
+      en: "Payments company processing card and instant transfers for 2 million merchants."
+      pt: "Empresa de pagamentos que processa cartões e transferências instantâneas para 2 milhões de lojistas."
+    bullets:
+      - id: acme-dbx-pipeline-01
+        tags: [databricks, spark, delta, etl, pipelines]
+        en: "Built Databricks pipelines in PySpark processing 2 TB/day of payment events into Delta Lake, cutting batch latency from 6 h to 40 min."
+        pt: "Construí pipelines no Databricks em PySpark processando 2 TB/dia de eventos de pagamento em Delta Lake, reduzindo a latência dos lotes de 6 h para 40 min."
+      - id: acme-delta-02
+        tags: [delta, data-modeling, spark]
+        en: "Migrated 40 legacy tables to a medallion architecture on Delta Lake with schema enforcement and time travel."
+        pt: "Migrei 40 tabelas legadas para uma arquitetura medallion em Delta Lake com schema enforcement e time travel."
+      - id: acme-adf-03
+        tags: [azure, azure-data-factory, pipelines]
+        en: "Orchestrated 60+ ingestion jobs with Azure Data Factory, adding alerting that reduced missed SLAs by 80%."
+        pt: "Orquestrei mais de 60 jobs de ingestão com Azure Data Factory, adicionando alertas que reduziram SLAs perdidos em 80%."
+      - id: acme-cicd-04
+        tags: [ci-cd, testing, python]
+        en: "Introduced CI/CD with GitHub Actions and pytest for all data jobs, raising test coverage from 10% to 75%."
+        pt: "Implantei CI/CD com GitHub Actions e pytest para todos os jobs de dados, elevando a cobertura de testes de 10% para 75%."
+      - id: acme-cost-05
+        tags: [databricks, cost-optimization, spark]
+        en: "Reduced Databricks compute cost by 35% through cluster policies, autoscaling and partition tuning."
+        pt: "Reduzi o custo de computação do Databricks em 35% com políticas de cluster, autoscaling e ajuste de particionamento."
+      - id: acme-streaming-06
+        tags: [streaming, kafka, spark]
+        en: "Designed a Spark Structured Streaming job consuming Kafka topics for near real-time fraud features."
+        pt: "Projetei um job de Spark Structured Streaming consumindo tópicos Kafka para features de fraude em tempo quase real."
+
+  - id: job-datacorp
+    company: "DataCorp Analytics"
+    title: { en: "Analytics Engineer", pt: "Engenheira de Analytics" }
+    start: "2021-03"
+    end: "2022-12"
+    location: "São Paulo"
+    bullets:
+      - id: datacorp-dbt-01
+        tags: [dbt, sql, data-modeling, analytics]
+        en: "Modeled the sales domain in dbt (120 models) with tests and documentation used by 5 business teams."
+        pt: "Modelei o domínio de vendas em dbt (120 modelos) com testes e documentação usados por 5 áreas de negócio."
+      - id: datacorp-sql-02
+        tags: [sql, performance, postgresql]
+        en: "Tuned slow PostgreSQL queries and indexes, cutting dashboard load times by 70%."
+        pt: "Otimizei consultas e índices lentos no PostgreSQL, reduzindo o tempo de carga dos dashboards em 70%."
+      - id: datacorp-airflow-03
+        tags: [airflow, python, pipelines]
+        en: "Maintained Airflow DAGs for daily ingestion from 15 SaaS APIs with retries and data-quality checks."
+        pt: "Mantive DAGs do Airflow para ingestão diária de 15 APIs SaaS com retentativas e checagens de qualidade de dados."
+      - id: datacorp-bi-04
+        tags: [power-bi, analytics]
+        en: "Delivered Power BI datasets with row-level security for the finance team."
+        pt: "Entreguei datasets do Power BI com segurança em nível de linha para o time financeiro."
+
+  - id: job-intern
+    company: "Universidade Federal"
+    title: { en: "Research Intern, Data", pt: "Estagiária de Pesquisa em Dados" }
+    start: "2019-08"
+    end: "2021-02"
+    location: "São Paulo"
+    bullets:
+      - id: intern-python-01
+        tags: [python, pandas, analytics]
+        en: "Cleaned and analyzed public health datasets with Python and pandas for two published papers."
+        pt: "Limpei e analisei bases públicas de saúde com Python e pandas para dois artigos publicados."
+      - id: intern-scraping-02
+        tags: [python, etl]
+        en: "Built a scraper and ETL that collected 1M records from government portals."
+        pt: "Construí um scraper e ETL que coletou 1 milhão de registros de portais governamentais."
+
+projects:
+  # Projects can have a context line (description), links and bullets. A selected
+  # project shows the bullets chosen for it, which can be none.
+  - id: proj-airflow-demo
+    name: "lakehouse-demo"
+    tags: [airflow, docker, spark, delta]
+    start: "2022-06"
+    end: "2022-09"
+    links:
+      - { label: { en: "Code", pt: "Código" }, url: "https://github.com/example/lakehouse-demo" }
+    description:
+      en: "End-to-end lakehouse demo: Airflow, PySpark and Delta Lake on Docker Compose, with data-quality tests."
+      pt: "Demo de lakehouse ponta a ponta: Airflow, PySpark e Delta Lake em Docker Compose, com testes de qualidade de dados."
+    bullets:
+      - id: lakehouse-dags-01
+        tags: [airflow, docker, pipelines]
+        en: "Wrote Airflow DAGs that load public transit data into bronze, silver and gold Delta tables."
+        pt: "Escrevi DAGs do Airflow que carregam dados públicos de transporte em tabelas Delta bronze, silver e gold."
+      - id: lakehouse-tests-02
+        tags: [testing, python]
+        en: "Added pytest data-quality checks that run in CI before every merge."
+        pt: "Adicionei verificações de qualidade de dados em pytest que rodam no CI antes de cada merge."
+  - id: proj-dbt-pkg
+    name: "dbt-br-utils"
+    tags: [dbt, sql]
+    links:
+      - { label: "github.com/example/dbt-br-utils", url: "https://github.com/example/dbt-br-utils" }
+    description:
+      en: "Open-source dbt package with macros for Brazilian formats (CPF, CNPJ, dates)."
+      pt: "Pacote open source de dbt com macros para formatos brasileiros (CPF, CNPJ, datas)."
+  - id: proj-kafka-lab
+    name: "kafka-lab"
+    tags: [kafka, streaming, python]
+    links:
+      - { label: "github.com/example/kafka-lab", url: "https://github.com/example/kafka-lab" }
+    description:
+      en: "Streaming lab with Kafka, Python consumers and schema registry, documented step by step."
+      pt: "Laboratório de streaming com Kafka, consumidores em Python e schema registry, documentado passo a passo."
+
+education:
+  - id: edu-bsc
+    institution: "Universidade Federal"
+    degree: { en: "B.Sc. in Computer Science", pt: "Bacharelado em Ciência da Computação" }
+    note: { en: "Honours", pt: "Láurea acadêmica" }
+    start: "2017"
+    end: "2021"
+
+skills:
+  hands_on:
+    - id: skills-processing
+      category: { en: "Processing", pt: "Processamento" }
+      items: [PySpark, Spark SQL, Delta Lake, pandas]
+    - id: skills-platform
+      category: { en: "Platform", pt: "Plataforma" }
+      items: [Databricks, Azure, Azure Data Factory, GitHub Actions]
+    - id: skills-languages
+      category: { en: "Languages", pt: "Linguagens" }
+      items: [Python, SQL]
+    - id: skills-modeling
+      category: { en: "Modeling", pt: "Modelagem" }
+      items: [dbt, PostgreSQL, { en: "Dimensional modeling", pt: "Modelagem dimensional" }]
+  working:
+    - id: skills-working-orchestration
+      category: { en: "Orchestration", pt: "Orquestração" }
+      items: [Airflow, Power BI]
+    - id: skills-working-streaming
+      category: { en: "Streaming", pt: "Streaming" }
+      items: [Kafka, Spark Structured Streaming]
+  familiar:
+    - id: skills-familiar-other
+      category: { en: "Familiar with", pt: "Familiaridade" }
+      items: [Docker, Kubernetes, Snowflake, Terraform]
+
+tag_aliases:
+  spark: [pyspark, "apache spark", "spark sql"]
+  azure-data-factory: [adf, "data factory"]
+  ci-cd: [ci/cd, "continuous integration", "github actions"]
+  data-modeling: ["data modelling", "dimensional modeling", "modelagem de dados"]
+  pipelines: [pipeline, "data pipelines"]
+  postgresql: [postgres]
+  power-bi: [powerbi]
+  streaming: ["real-time", "real time", "tempo real"]
+
+limits:
+  min_bullets_per_job: 1
+  max_bullets_per_job: 5
+  max_bullets_per_project: 3
+  max_total_bullets: 12
+  max_projects: 2
+  max_pages: 1
+
+# Order of sections on the page; leave one out to hide it. This is the default.
+layout:
+  sections: [summary, experience, projects, skills, education]
