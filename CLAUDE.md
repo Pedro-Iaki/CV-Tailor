@@ -25,6 +25,10 @@ Implementation rules:
 - `cvtailor/choices.py`: the choice format used with local models. Bullets are ranked per owner (`{id: rank}`, so no duplicates), bullet versions become one slot plus a version pick, and conflicting skill categories become whole layouts (`anyOf`) with per-category item lists. `decode()` maps the answer back to plain ids before validation. It never repairs.
 - `cvtailor/careful.py`: careful mode (`new --careful`). Hints from tags and embeddings, a free-text analysis pass (with `data/worked_examples.yaml`), the constrained selection, then one review and revision. Free text only goes back to the model or to verbose output, never into the CV.
 - `cvtailor/ratings.py`: `apply.py rate`, a local page (127.0.0.1) for blind 1-5 ratings of CVs (applications plus JSONL candidates), stored in the `cv_ratings` table.
+- `cvtailor/desktop.py` + `cvtailor/ui/index.html`: the desktop app (pywebview, WebView2 on Windows) over the same pipeline. Tabs: New CV, Applications, Rate, Setup, Settings. Long work runs as polled jobs. Each call gets its own Context (SQLite is per-thread). `cv_tailor_app.py` is the entry point; `build_portable.ps1` builds the portable folder with PyInstaller.
+- `cvtailor/ollama_setup.py`: Ollama detection, start, install (winget or download page) and model pulls for the Setup tab.
+- Portable layout (`config.py`): the packaged exe, or `CV_PORTABLE=1`, keeps everything next to the exe in `Data/` (with `settings.env`) and `Output/`. From source, `data/`, `output/` and `.env` stay as before.
+- PDFs: `render.BrowserRenderer` prints through headless Edge or Chrome (nothing bundled, same engine as the window); `WeasyRenderer` is the fallback. `CV_PDF_ENGINE` picks one.
 - `cvtailor/local_llm.py`: `LocalClient`, used when `CV_LLM_BASE_URL` is set. It mimics `client.messages.create` over an OpenAI-compatible server (Ollama, llama.cpp, LM Studio), so `llm.py` prompts, schemas and validation are shared. Stdlib only.
 - Other modules each own one pipeline concern (see the module table in docs/DESIGN.md): `schema`, `master`, `tags`, `validate`, `route`, `variants`, `trim`, `render`, `editor`, `db`, `stats`.
 

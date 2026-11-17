@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CV Tailor</title>
+<style>
+:root{--bg:#f5f4f0;--panel:#fff;--ink:#1d1d1b;--muted:#6d6c66;--line:#e2e0da;--accent:#c4451c;--accent-ink:#fff;--ok:#2f7d4f;--warn:#a86a00;--bad:#b3261e;--soft:#f0eee8}
+@media (prefers-color-scheme: dark){:root{--bg:#151514;--panel:#1e1e1c;--ink:#ebeae4;--muted:#9c9b92;--line:#34332f;--accent:#e8774f;--accent-ink:#1a0d07;--ok:#5fbf86;--warn:#e0a63c;--bad:#ef7b72;--soft:#262623}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font:14px/1.45 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink);display:grid;grid-template-rows:auto 1fr}
+header{display:flex;align-items:center;gap:18px;padding:0 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+header b{font-size:15px;letter-spacing:.2px}
+nav{display:flex;gap:2px}nav button{border:0;background:none;padding:14px 12px;color:var(--muted);border-bottom:2px solid transparent;border-radius:0}
+nav button.on{color:var(--ink);border-bottom-color:var(--accent)}
+header .status{margin-left:auto;font-size:12px;color:var(--muted)}
+main{overflow:hidden}.tab{display:none;height:100%;overflow:auto;padding:18px}.tab.on{display:block}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:7px 12px;cursor:pointer}
+button:hover{background:var(--soft)}button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+textarea,input[type=text],input[type=password],input[type=number],select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+textarea{width:100%;min-height:220px;resize:vertical}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.card h3{margin:0 0 8px;font-size:14px}.muted{color:var(--muted)}.small{font-size:12px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.grow{flex:1}
+.cols{display:grid;grid-template-columns:minmax(320px,1fr) minmax(0,1.3fr);gap:16px;height:100%}
+.log{font:12px/1.5 Consolas,monospace;white-space:pre-wrap;background:var(--soft);border-radius:8px;padding:10px;max-height:260px;overflow:auto}
+iframe{width:100%;height:100%;min-height:540px;border:1px solid var(--line);border-radius:8px;background:#fff}
+table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--muted);font-weight:600}tr.sel td{background:var(--soft)}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.bar{height:6px;background:var(--soft);border-radius:99px;overflow:hidden;width:220px}.bar i{display:block;height:100%;background:var(--accent);width:0}
+.rate{display:grid;grid-template-columns:260px 1fr;gap:14px;height:100%}
+.list{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:auto}
+.item{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--line);cursor:pointer}
+.item:first-child{border-top:0}.item.on{background:var(--soft);box-shadow:inset 3px 0 var(--accent)}
+.item .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stars button{width:38px;font-weight:600}.stars button.sel{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.panes{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px;height:calc(100% - 96px)}
+pre.job{margin:0;white-space:pre-wrap;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;font:13px/1.45 "Segoe UI",system-ui}
+.field{display:grid;grid-template-columns:220px 1fr;gap:6px 14px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.field:first-child{border-top:0}.field input,.field select{width:100%}
+@media (max-width:900px){.cols,.rate,.panes{grid-template-columns:1fr}.field{grid-template-columns:1fr}}
+</style></head>
+<body>
+<header><b>CV Tailor</b>
+<nav id="nav"><button data-tab="new" class="on">New CV</button><button data-tab="apps">Applications</button><button data-tab="rate">Rate</button><button data-tab="setup">Setup</button><button data-tab="settings">Settings</button></nav>
+<span class="status" id="status">Starting...</span></header>
+<main>
+
+<section class="tab on" id="tab-new"><div class="cols">
+ <div>
+  <div class="card"><h3>Job posting</h3>
+   <textarea id="jobText" placeholder="Paste the job description here (a URL on the first line is kept as the posting's link)."></textarea>
+   <div class="row" style="margin-top:10px">
+    <button id="pasteBtn">Paste from clipboard</button>
+    <label>Language <select id="lang"><option value="">From the posting</option><option value="en">English</option><option value="pt">Portuguese</option></select></label>
+   </div>
+   <div class="row" style="margin-top:10px">
+    <label><input type="checkbox" id="careful"> Careful mode (slower, better)</label>
+    <label><input type="checkbox" id="dryRun"> Dry run (select only, save nothing)</label>
+    <label><input type="checkbox" id="allowDup"> Allow duplicate posting</label>
+    <label><input type="checkbox" id="forceGen"> Always generate (skip saved variants)</label>
+   </div>
+   <div class="row" style="margin-top:12px"><button class="primary" id="tailorBtn">Tailor CV</button><span class="muted small" id="runInfo"></span></div>
+  </div>
+  <div class="card"><h3>Progress</h3><div class="log" id="log">Nothing running.</div></div>
+  <div class="card" id="resultCard" style="display:none"><h3>Result</h3><div id="result"></div></div>
+ </div>
+ <div><iframe id="newPreview" title="CV preview"></iframe></div>
+</div></section>
+
+<section class="tab" id="tab-apps"><div class="cols">
+ <div class="card" style="overflow:auto"><div class="row" style="margin-bottom:8px"><h3 class="grow" style="margin:0">Applications</h3><button id="refreshApps">Refresh</button><button onclick="api('open_folder','output')">Open PDF folder</button></div>
+  <table><thead><tr><th>#</th><th>Date</th><th>Company / role</th><th>Lang</th><th>Status</th></tr></thead><tbody id="appRows"></tbody></table></div>
+ <div><div class="row" style="margin-bottom:8px" id="appActions"><span class="muted">Select an application.</span></div><iframe id="appPreview" title="CV preview"></iframe></div>
+</div></section>
+
+<section class="tab" id="tab-rate"><div class="rate">
+ <div class="list" id="rateList"></div>
+ <div>
+  <div class="card" style="margin-bottom:12px"><div class="row"><b class="grow" id="rateTitle">Rate CVs 1 to 5</b>
+   <button id="rateLang">EN / PT</button><span class="stars" id="stars"></span>
+   <input type="text" id="rateNote" placeholder="Note (optional)" style="min-width:200px"><button id="rateSummary">Summary</button></div>
+   <div class="muted small" id="rateLabel">Keys: 1-5 rate and move on, L switches language. The setup behind a CV shows after you rate it. Extra CVs: put .jsonl files in Data/candidates.</div></div>
+  <div class="panes" id="ratePanes"><iframe id="rateCv" title="CV"></iframe><pre class="job" id="rateJob"></pre></div>
+  <div class="card" id="rateSummaryCard" style="display:none"></div>
+ </div>
+</div></section>
+
+<section class="tab" id="tab-setup"><div id="setup"></div></section>
+
+<section class="tab" id="tab-settings"><div class="card"><div class="row"><h3 class="grow" style="margin:0">Settings</h3><span class="muted small" id="settingsFile"></span></div>
+ <div id="settingsForm"></div><div class="row" style="margin-top:12px"><button class="primary" id="saveSettings">Save</button><span class="muted small" id="settingsMsg"></span></div></div></section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(name, ...args){ return await window.pywebview.api[name](...args); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function follow(jobId, onTick){ for(;;){ const j = await api('job_status', jobId); onTick && onTick(j); if (j.done) return j; await sleep(700); } }
+let state = null;
+
+// ---------------------------------------------------------------- tabs
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
+  ({apps: loadApps, rate: loadRate, setup: loadSetup, settings: loadSettings})[b.dataset.tab]?.();
+});
+
+async function refreshState(){
+  state = await api('get_state');
+  const o = state.ollama;
+  let s = state.local ? `Local: ${state.model}` : `Anthropic API: ${state.model}`;
+  if (state.local) s += o && o.running ? ' · Ollama running' : ' · Ollama not running';
+  if (!state.master_ok) s += ' · master.yaml has problems';
+  $('status').textContent = s;
+  $('careful').checked = !!state.careful_default;
+  return state;
+}
+
+// ---------------------------------------------------------------- new CV
+$('pasteBtn').onclick = async () => { const t = await api('read_clipboard'); if (t) $('jobText').value = t; };
+$('tailorBtn').onclick = async () => {
+  const text = $('jobText').value.trim();
+  if (!text) { $('runInfo').textContent = 'Paste a job description first.'; return; }
+  $('tailorBtn').disabled = true; $('resultCard').style.display = 'none'; $('log').textContent = '';
+  const t0 = Date.now();
+  const id = await api('new_cv', text, {lang: $('lang').value, careful: $('careful').checked, dry_run: $('dryRun').checked,
+                                       allow_duplicate: $('allowDup').checked, force_generate: $('forceGen').checked});
+  const job = await follow(id, j => { $('log').textContent = j.lines.join('\n') || 'Working...'; $('log').scrollTop = 1e9;
+                                       $('runInfo').textContent = `Running ${Math.round((Date.now()-t0)/1000)} s`; });
+  $('tailorBtn').disabled = false; $('runInfo').textContent = `Finished in ${Math.round((Date.now()-t0)/1000)} s`;
+  showResult(job);
+};
+async function showResult(job){
+  $('resultCard').style.display = '';
+  if (job.error) { $('result').innerHTML = `<p class="bad">${esc(job.error)}</p>`; return; }
+  const r = job.result;
+  let h = `<p><b>${esc(r.company)}</b> · ${esc(r.role)} · ${esc(r.lang.toUpperCase())} · route: ${esc(r.route)}</p>`;
+  if (r.trimmed?.length) h += `<p class="small muted">Trimmed to fit one page: ${esc(r.trimmed.join(', '))}</p>`;
+  if (r.unmatched?.length) h += `<p class="small"><b>Not covered by your master:</b> ${esc(r.unmatched.join('; '))}</p>`;
+  if (r.suggestions?.length) h += `<p class="small"><b>Suggestions:</b> ${esc(r.suggestions.join(' | '))}</p>`;
+  if (r.app_id) {
+    h += `<div class="row"><button class="primary" onclick="openPdf(${r.app_id}, '${r.lang}')">Open PDF</button>
+          <button onclick="openPdf(${r.app_id}, '${r.lang === 'en' ? 'pt' : 'en'}')">Make ${r.lang === 'en' ? 'PT' : 'EN'} version</button>
+          <span class="muted small">Saved as application #${r.app_id}</span></div>`;
+    $('newPreview').srcdoc = await api('preview', r.app_id, r.lang);
+  } else { h += '<p class="muted small">Dry run: nothing was saved. The selection is in the progress log.</p>'; }
+  $('result').innerHTML = h;
+}
+async function openPdf(id, lang){ const j = await follow(await api('open_pdf', id, lang)); if (j.error) alert(j.error); }
+
+// ---------------------------------------------------------------- applications
+const STATUSES = ['applied','screen','interview','offer','rejected','ghosted','discarded'];
+let selApp = null;
+$('refreshApps').onclick = loadApps;
+async function loadApps(){
+  const rows = await api('list_apps');
+  $('appRows').innerHTML = rows.map(r => `<tr data-id="${r.id}" class="${r.id === selApp?.id ? 'sel' : ''}"><td>${r.id}</td><td>${r.date}</td>
+    <td>${esc(r.company)}<br><span class="muted small">${esc(r.role)}</span></td><td>${r.lang.toUpperCase()}</td>
+    <td><select data-status="${r.id}">${STATUSES.map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}</select></td></tr>`).join('')
+    || '<tr><td colspan="5" class="muted">No applications yet.</td></tr>';
+  document.querySelectorAll('#appRows tr[data-id]').forEach(tr => tr.onclick = e => { if (e.target.tagName !== 'SELECT') selectApp(rows.find(r => r.id == tr.dataset.id)); });
+  document.querySelectorAll('select[data-status]').forEach(s => s.onchange = async () => { await api('set_status', +s.dataset.status, s.value); });
+}
+async function selectApp(r, lang){
+  selApp = r; lang = lang || r.lang; loadApps();
+  $('appActions').innerHTML = `<b class="grow">#${r.id} ${esc(r.company)}</b>
+    <button onclick="selectApp(selApp, '${lang === 'en' ? 'pt' : 'en'}')">Show ${lang === 'en' ? 'PT' : 'EN'}</button>
+    <button class="primary" onclick="openPdf(${r.id}, '${lang}')">Open PDF (${lang.toUpperCase()})</button>
+    <button onclick="regenApp(${r.id})">Re-run selection</button>`;
+  $('appPreview').srcdoc = await api('preview', r.id, lang);
+}
+async function regenApp(id){
+  if (!confirm('Run the selection again for this application? Its stored CV and PDF are replaced.')) return;
+  const j = await follow(await api('regen_app', id)); if (j.error) alert(j.error); else selectApp(selApp);
+}
+
+// ---------------------------------------------------------------- rate
+let items = [], cur = null, rlang = null, picked = null;
+async function loadRate(){ items = await api('rate_items'); drawRateList(); if (!cur && items.length) showRate((items.find(i => !i.rating) || items[0]).key);
+  if (!items.length) $('rateTitle').textContent = 'Nothing to rate yet: tailor a CV, or put candidate .jsonl files in Data/candidates.'; }
+function drawRateList(){ $('rateList').innerHTML = items.map(i => `<div class="item ${i.key === cur ? 'on' : ''}" data-key="${esc(i.key)}"><span class="t">#${i.n} ${esc(i.title)}</span><b class="ok">${i.rating || ''}</b></div>`).join('');
+  document.querySelectorAll('#rateList .item').forEach(d => d.onclick = () => showRate(d.dataset.key)); }
+async function showRate(key){
+  cur = key; const i = items.find(x => x.key === key); rlang = rlang || i.lang; picked = i.rating;
+  $('rateSummaryCard').style.display = 'none'; $('ratePanes').style.display = '';
+  $('rateTitle').textContent = `#${i.n} ${i.title}`; $('rateNote').value = i.note || '';
+  $('rateLabel').textContent = i.label ? 'Made by: ' + i.label : 'Made by: hidden until rated. Keys: 1-5 rate and move on, L switches language.';
+  drawStars(); drawRateList();
+  $('rateCv').srcdoc = await api('rate_cv', key, rlang); $('rateJob').textContent = await api('rate_job', key);
+}
+function drawStars(){ $('stars').innerHTML = [1,2,3,4,5].map(n => `<button class="${picked === n ? 'sel' : ''}" onclick="rateIt(${n})">${n}</button>`).join(''); }
+async function rateIt(n){ picked = n; drawStars(); await api('rate', cur, n, $('rateNote').value); items = await api('rate_items');
+  const idx = items.findIndex(i => i.key === cur); const next = items.slice(idx + 1).concat(items.slice(0, idx + 1)).find(i => !i.rating);
+  if (next) showRate(next.key); else { showRate(cur); rateSummary(); } }
+async function rateSummary(){ const rows = await api('rate_summary'); $('ratePanes').style.display = 'none'; const c = $('rateSummaryCard'); c.style.display = '';
+  c.innerHTML = '<h3>Mean rating per setup</h3><table><tr><th>Setup</th><th>Rated</th><th>Mean</th><th>Ratings</th></tr>' +
+    rows.map(r => `<tr><td>${esc(r.group)}</td><td>${r.rated} / ${r.total}</td><td>${r.mean ?? '-'}</td><td>${r.ratings.join(', ')}</td></tr>`).join('') + '</table>'; }
+$('rateSummary').onclick = rateSummary;
+$('rateLang').onclick = () => { rlang = rlang === 'en' ? 'pt' : 'en'; if (cur) showRate(cur); };
+document.addEventListener('keydown', e => {
+  if (!$('tab-rate').classList.contains('on') || ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if (e.key >= '1' && e.key <= '5') rateIt(+e.key); else if (e.key.toLowerCase() === 'l') $('rateLang').click();
+});
+
+// ---------------------------------------------------------------- setup
+async function loadSetup(){
+  const s = await refreshState(); const o = s.ollama; let h = '';
+  h += `<div class="card"><h3>Folders</h3><p class="small">${s.portable ? 'Portable app: everything lives in this folder.' : 'Running from source.'}</p>
+    <p class="small muted">Data: ${esc(s.data_dir)}<br>PDFs: ${esc(s.output_dir)}<br>Settings: ${esc(s.settings_file)}</p>
+    <div class="row"><button onclick="api('open_folder','data')">Open data folder</button><button onclick="api('open_folder','output')">Open PDF folder</button>
+    <button onclick="importData()">Import data from a folder...</button></div><p class="small muted" id="importMsg"></p></div>`;
+  h += `<div class="card"><h3>Master resume</h3><p class="${s.master_ok ? 'ok' : 'bad'}" style="white-space:pre-wrap">${s.master_ok ? 'OK: ' : ''}${esc(s.master)}</p>
+    <button onclick="api('open_master')">Open master.yaml</button> <span class="muted small">Edit it in your editor; the app reads it on every run.</span></div>`;
+  h += `<div class="card"><h3>PDF engine</h3><p class="${s.browser ? 'ok' : 'warn'}">${s.browser ? 'Using ' + esc(s.browser) : 'No Edge or Chrome found: PDFs need WeasyPrint.'}</p></div>`;
+  if (s.local) {
+    h += `<div class="card"><h3>Ollama</h3>`;
+    if (o.running) h += `<p class="ok">Running (version ${esc(o.version)}).</p>`;
+    else if (o.installed) h += `<p class="warn">Installed but not running.</p><button class="primary" onclick="startOllama()">Start Ollama</button>`;
+    else h += `<p class="bad">Not installed. CV Tailor needs Ollama to run models on this PC.</p><div class="row">
+      ${o.winget ? '<button class="primary" onclick="installOllama(\'winget\')">Install with winget</button>' : ''}
+      <button onclick="installOllama('browser')">Open the download page</button></div>
+      <p class="small muted">After installing, press Recheck.</p>`;
+    h += ` <button onclick="loadSetup()">Recheck</button></div>`;
+    if (o.running) {
+      h += `<div class="card"><h3>Models</h3><table><tr><th>Model</th><th>Download</th><th>Use</th><th></th></tr>` +
+        s.recommended.map(m => { const have = o.models.some(x => x === m.name || x === m.name + ':latest');
+          return `<tr><td>${esc(m.name)}${m.name === s.model ? ' <span class="pill">selected</span>' : ''}</td><td>${m.size}</td><td class="small">${esc(m.why)}</td>
+            <td>${have ? '<span class="ok">Downloaded</span>' : `<button onclick="pull('${m.name}', this)">Download</button>`}</td></tr>`; }).join('') + '</table>';
+      if (!o.models.some(x => x === s.model || x === s.model + ':latest')) h += `<p class="warn small">The selected model (${esc(s.model)}) is not downloaded yet.</p>`;
+      h += `<div class="row" style="margin-top:8px"><span id="pullMsg" class="small muted"></span><div class="bar" id="pullBar" style="display:none"><i></i></div></div></div>`;
+    }
+  }
+  $('setup').innerHTML = h;
+}
+async function startOllama(){ await api('ollama_start'); for (let i = 0; i < 15; i++) { await sleep(1000); const s = await refreshState(); if (s.ollama?.running) break; } loadSetup(); }
+async function installOllama(how){ const r = await api('ollama_install', how); alert(r.opened === 'winget' ? 'A console opened to install Ollama. Press Recheck when it finishes.' : 'The download page opened in your browser. Install Ollama, then press Recheck.'); }
+async function pull(name, btn){ btn.disabled = true; $('pullBar').style.display = '';
+  const j = await follow(await api('ollama_pull', name), j => { const p = j.progress; if (!p) return;
+    $('pullMsg').textContent = `${name}: ${p.status}` + (p.total ? ` (${(p.done/1e9).toFixed(1)} of ${(p.total/1e9).toFixed(1)} GB)` : '');
+    $('pullBar').firstChild.style.width = p.total ? (100 * p.done / p.total) + '%' : '0'; });
+  if (j.error) alert(j.error); loadSetup(); }
+async function importData(){ const r = await api('import_data');
+  $('importMsg').textContent = r.copied?.length ? `Copied ${r.copied.join(', ')} (earlier files kept as .bak).` : 'Nothing copied: pick the folder that holds master.yaml.';
+  refreshState(); }
+
+// ---------------------------------------------------------------- settings
+async function loadSettings(){
+  const s = await api('get_settings'); $('settingsFile').textContent = s.file;
+  $('settingsForm').innerHTML = s.fields.map(f => {
+    let input;
+    if (f.kind.startsWith('choice:')) input = `<select data-key="${f.key}">${f.kind.slice(7).split(',').map(o => `<option value="${o}" ${o === f.value ? 'selected' : ''}>${o || '(default)'}</option>`).join('')}</select>`;
+    else if (f.kind === 'bool') input = `<select data-key="${f.key}"><option value="" ${!f.value ? 'selected' : ''}>off</option><option value="true" ${['true','1','yes','on'].includes(f.value) ? 'selected' : ''}>on</option></select>`;
+    else input = `<input data-key="${f.key}" type="${f.kind === 'secret' ? 'password' : f.kind === 'int' ? 'number' : 'text'}" value="${esc(f.value)}">`;
+    return `<div class="field"><label><b>${esc(f.label)}</b><br><span class="muted small">${esc(f.key)}</span></label><div>${input}<div class="muted small">${esc(f.help)}</div></div></div>`;
+  }).join('');
+}
+$('saveSettings').onclick = async () => { const v = {}; document.querySelectorAll('#settingsForm [data-key]').forEach(e => v[e.dataset.key] = e.value);
+  await api('save_settings', v); $('settingsMsg').textContent = 'Saved.'; refreshState(); };
+
+window.addEventListener('pywebviewready', async () => {
+  const s = await refreshState();
+  if (s.local && !(s.ollama?.running) || !s.master_ok) document.querySelector('#nav [data-tab=setup]').click();
+});
+</script>
+</body></html>

@@ -20,7 +20,7 @@ from . import db
 from .config import Config, app_folder_name, company_key, pdf_filename
 from .llm import LLM, LLMError, Usage
 from .master import item_index, item_text, load_master
-from .render import Renderer, WeasyRenderer, make_render_input
+from .render import Renderer, make_render_input, make_renderer
 from .route import RouteResult, route
 from .schema import TIERS, LLMSelection, Master, Meta, Selection
 from .tags import match_tags
@@ -97,7 +97,7 @@ class Context:
 
     def get_renderer(self) -> Renderer:
         if self.renderer is None:
-            self.renderer = WeasyRenderer()
+            self.renderer = make_renderer(self.cfg.pdf_engine)
         return self.renderer
 
 

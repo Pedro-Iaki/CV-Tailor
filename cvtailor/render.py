@@ -1,4 +1,8 @@
-"""Jinja2 -> HTML -> PDF (WeasyPrint), with page counting.
+"""Jinja2 -> HTML -> PDF, with page counting.
+
+Two PDF engines: a headless Chromium browser (Edge, preinstalled on Windows; Chrome
+elsewhere), which needs nothing bundled, and WeasyPrint, which needs Pango/GTK.
+CV_PDF_ENGINE picks one; the default uses a browser when one is found.
 
 The renderer only ever sees a RenderInput. WeasyPrint is imported lazily so the rest
 of the tool (and the test-suite) works on machines without Pango installed.
@@ -6,6 +10,11 @@ of the tool (and the test-suite) works on machines without Pango installed.
 
 from __future__ import annotations
 
+import os
+import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -176,7 +185,11 @@ def render_html(ri: RenderInput, templates_dir: Path = TEMPLATES_DIR) -> str:
 
 # ---------------------------------------------------------------- PDF
 
-class WeasyPrintMissing(RuntimeError):
+class PdfEngineMissing(RuntimeError):
+    """No PDF engine is available (neither a Chromium browser nor WeasyPrint)."""
+
+
+class WeasyPrintMissing(PdfEngineMissing):
     pass
 
 
@@ -211,3 +224,78 @@ class WeasyRenderer:
         html = render_html(ri, self.templates_dir)
         pages, pdf = html_to_pdf(html, self.templates_dir)
         return Rendered(pages, pdf, html)
+
+
+# ---------------------------------------------------------------- PDF via a browser
+
+_BROWSER_CANDIDATES = [
+    # Edge ships with Windows 10 and 11; its print-to-PDF uses the same Chromium engine
+    # as the app window (WebView2), so the preview and the PDF match.
+    r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe",
+    r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe",
+    r"%ProgramFiles%\Google\Chrome\Application\chrome.exe",
+    r"%LocalAppData%\Google\Chrome\Application\chrome.exe",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+]
+_PAGE_RE = re.compile(rb"/Type\s*/Page(?![a-zA-Z])")
+
+
+def find_browser() -> Optional[str]:
+    """A Chromium-based browser that can print to PDF headlessly, or None."""
+    for name in ("msedge", "microsoft-edge", "google-chrome", "chromium", "chromium-browser", "chrome"):
+        found = shutil.which(name)
+        if found:
+            return found
+    for cand in _BROWSER_CANDIDATES:
+        path = Path(os.path.expandvars(cand))
+        if "%" not in str(path) and path.exists():
+            return str(path)
+    return None
+
+
+def count_pdf_pages(pdf: bytes) -> int:
+    """Pages in a PDF written by Chromium (page objects are not packed in object streams)."""
+    return len(_PAGE_RE.findall(pdf))
+
+
+class BrowserRenderer:
+    """PDF through a headless Chromium browser (Edge on Windows). Needs nothing bundled,
+    and writes its temporary profile in a temp folder, not in the user's profile."""
+
+    def __init__(self, browser: Optional[str] = None, templates_dir: Path = TEMPLATES_DIR,
+                 timeout: float = 60.0):
+        self.browser = browser or find_browser()
+        if not self.browser:
+            raise PdfEngineMissing("no Edge or Chrome found to print PDFs; install one, or WeasyPrint")
+        self.templates_dir = templates_dir
+        self.timeout = timeout
+
+    def render(self, ri: RenderInput) -> Rendered:
+        html = render_html(ri, self.templates_dir)
+        with tempfile.TemporaryDirectory(prefix="cvtailor-pdf-") as tmp:
+            src, out = Path(tmp) / "cv.html", Path(tmp) / "cv.pdf"
+            src.write_text(html, encoding="utf-8")
+            cmd = [self.browser, "--headless", "--disable-gpu", "--no-first-run",
+                   "--no-pdf-header-footer", "--print-to-pdf-no-header",
+                   f"--user-data-dir={Path(tmp) / 'profile'}", f"--print-to-pdf={out}", src.as_uri()]
+            try:
+                subprocess.run(cmd, capture_output=True, timeout=self.timeout, check=False)
+            except subprocess.TimeoutExpired:
+                raise PdfEngineMissing(f"the browser did not print the PDF within {self.timeout:.0f} s") from None
+            if not out.exists() or out.stat().st_size == 0:
+                raise PdfEngineMissing(f"the browser ({Path(self.browser).name}) did not write a PDF")
+            pdf = out.read_bytes()
+        return Rendered(count_pdf_pages(pdf), pdf, html)
+
+
+def make_renderer(engine: str = "auto") -> Renderer:
+    """'browser' (Edge/Chrome), 'weasyprint', or 'auto': a browser if one is found,
+    else WeasyPrint."""
+    engine = (engine or "auto").lower()
+    if engine == "weasyprint":
+        return WeasyRenderer()
+    if engine in ("browser", "edge", "chrome"):
+        return BrowserRenderer()
+    browser = find_browser()
+    return BrowserRenderer(browser) if browser else WeasyRenderer()

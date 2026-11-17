@@ -1,0 +1,383 @@
+"""The desktop app: a pywebview window (WebView2 on Windows) over the same pipeline.
+
+Run from source with `python -m cvtailor.desktop`, or as the packaged portable app
+(CV Tailor.exe). The page (cvtailor/ui/index.html) calls the methods of `Api` through
+window.pywebview.api. Long operations (tailoring, rendering, model downloads) run in
+background threads as jobs; the page polls job_status for progress.
+
+Every call builds its own Context, because the page calls in from several threads and
+SQLite connections are per-thread.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import threading
+import traceback
+import uuid
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+from . import db, ollama_setup
+from .config import Config, app_home, default_dirs, is_portable, settings_path
+from .master import MasterError
+from .pipeline import (IO, Context, NewOptions, PipelineError, get_app, pdf_path_for, regen,
+                       rerender, run_new)
+from .render import PdfEngineMissing, find_browser, make_render_input, render_html
+
+UI_DIR = Path(__file__).resolve().parent / "ui"
+
+# Settings shown on the Settings tab: key -> (label, kind, help). kind: text | secret |
+# int | choice:a,b,c | bool. Anything else in settings.env is kept as is.
+SETTINGS: dict[str, tuple[str, str, str]] = {
+    "CV_LLM_BASE_URL": ("Local model server", "text", "Ollama: http://localhost:11434/v1. Empty: use the Anthropic API."),
+    "CV_MODEL": ("Model", "text", "Name on the server, e.g. qwen3.5:35b-a3b or lfm2.5:8b."),
+    "CV_LLM_REASONING": ("Reasoning (selection)", "choice:,none,low,medium,high",
+                         "Qwen: none (fast). GPT-OSS: low. Empty: the model's default."),
+    "CV_LLM_MODE": ("Default mode", "choice:,careful", "careful: analyse, select, review (slower, better)."),
+    "CV_LLM_CAREFUL_REASONING": ("Reasoning (careful analysis)", "choice:,none,low,medium,high",
+                                 "Empty: the model's default (Qwen thinks)."),
+    "CV_LLM_EMBED_MODEL": ("Embedding model (hints)", "text", "Optional, e.g. bge-m3."),
+    "CV_LLM_MAX_TOKENS": ("Max output tokens", "int", "Thinking included; at most the context window minus about 4.5k."),
+    "CV_LLM_TIMEOUT": ("Timeout per call (s)", "int", ""),
+    "ANTHROPIC_API_KEY": ("Anthropic API key", "secret", "Only when not using a local model."),
+    "CV_PDF_ENGINE": ("PDF engine", "choice:auto,browser,weasyprint", "auto: Edge/Chrome if found."),
+    "CV_PDF_NAME": ("PDF file name", "text", "{name}, {role}, {company}, {LANG}, {lang}"),
+    "CV_ALLOW_GENERATION": ("Allow drafted wording", "bool", "Off by default; drafts need your approval one by one."),
+}
+
+FIRST_RUN_SETTINGS = {
+    "CV_LLM_BASE_URL": "http://localhost:11434/v1",
+    "CV_MODEL": "qwen3.5:35b-a3b",
+    "CV_LLM_REASONING": "none",
+    "CV_LLM_MAX_TOKENS": "4096",
+    "CV_PDF_ENGINE": "auto",
+}
+
+IMPORTABLE = ["master.yaml", "worked_examples.yaml", "applications.db", "variants"]
+
+
+def ensure_portable_layout() -> None:
+    """Create Data/, Output/ and a first settings.env in the portable folder."""
+    data, output, settings = default_dirs()
+    data.mkdir(parents=True, exist_ok=True)
+    output.mkdir(parents=True, exist_ok=True)
+    if not settings.exists():
+        settings.write_text("# CV Tailor settings (edit here or on the Settings tab)\n" + "".join(
+            f"{k}={v}\n" for k, v in FIRST_RUN_SETTINGS.items()), encoding="utf-8")
+
+
+def reload_settings() -> None:
+    """Re-read settings.env into the environment. For the settings the app manages,
+    the file is the source of truth: a setting removed from it is removed here too."""
+    try:
+        from dotenv import dotenv_values
+    except ImportError:  # pragma: no cover
+        return
+    values = dotenv_values(settings_path()) if settings_path().exists() else {}
+    for k in set(values) | set(SETTINGS):
+        v = values.get(k)
+        if v is None or v == "":
+            if k in SETTINGS or k in values:
+                os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+
+class Job:
+    def __init__(self) -> None:
+        self.id = uuid.uuid4().hex[:8]
+        self.lines: list[str] = []
+        self.done = False
+        self.result: Any = None
+        self.error: Optional[str] = None
+        self.progress: Optional[dict] = None
+
+    def view(self) -> dict:
+        return {"id": self.id, "done": self.done, "lines": self.lines[-200:], "result": self.result,
+                "error": self.error, "progress": self.progress}
+
+
+class Api:
+    def __init__(self, ctx_factory: Optional[Callable[[], Context]] = None) -> None:
+        self.jobs: dict[str, Job] = {}
+        self.window: Any = None  # set by main(); used for file dialogs
+        self._factory = ctx_factory or (lambda: Context(Config.from_env()))
+
+    # ------------------------------------------------------------ helpers
+
+    def _ctx(self) -> Context:
+        """A fresh Context per call or job (SQLite connections are per-thread)."""
+        return self._factory()
+
+    def _run(self, fn: Callable[[Job], Any]) -> str:
+        job = Job()
+        self.jobs[job.id] = job
+
+        def go() -> None:
+            try:
+                job.result = fn(job)
+            except (PipelineError, MasterError, PdfEngineMissing) as e:
+                job.error = str(e)
+            except Exception as e:  # noqa: BLE001 - shown to the user, not swallowed
+                job.error = f"{type(e).__name__}: {e}"
+                job.lines.append(traceback.format_exc())
+            finally:
+                job.done = True
+        threading.Thread(target=go, daemon=True).start()
+        return job.id
+
+    def job_status(self, job_id: str) -> dict:
+        job = self.jobs.get(job_id)
+        return job.view() if job else {"id": job_id, "done": True, "error": "unknown job"}
+
+    # ------------------------------------------------------------ overview
+
+    def get_state(self) -> dict:
+        ctx = self._ctx()
+        cfg = ctx.cfg
+        settings = settings_path()
+        master_ok, master_msg = True, ""
+        try:
+            m = ctx.master
+            master_msg = f"{len(m.summaries)} summaries, {len(m.jobs)} jobs, {len(m.projects)} projects"
+        except MasterError as e:
+            master_ok, master_msg = False, "\n".join(e.errors) if getattr(e, "errors", None) else str(e)
+        except FileNotFoundError:
+            master_ok, master_msg = False, f"no master.yaml in {cfg.data_dir}"
+        return {
+            "portable": is_portable(), "home": str(app_home()), "data_dir": str(cfg.data_dir),
+            "output_dir": str(cfg.output_dir), "settings_file": str(settings),
+            "local": bool(cfg.llm_base_url), "model": cfg.model, "careful_default": cfg.careful,
+            "pdf_engine": cfg.pdf_engine, "browser": find_browser(),
+            "master_ok": master_ok, "master": master_msg,
+            "ollama": ollama_setup.status(cfg.llm_base_url) if cfg.llm_base_url else None,
+            "recommended": [{"name": n, "size": s, "why": w} for n, s, w in ollama_setup.RECOMMENDED],
+        }
+
+    # ------------------------------------------------------------ new CV
+
+    def new_cv(self, text: str, options: dict) -> str:
+        def work(job: Job) -> dict:
+            ctx = self._ctx()
+            io = IO(out=job.lines.append, confirm=lambda q: bool(options.get("allow_duplicate")),
+                    prompt=lambda q, d: d or "", interactive=False)
+            opts = NewOptions(lang=options.get("lang") or None, force_generate=bool(options.get("force_generate")),
+                              allow_duplicate=bool(options.get("allow_duplicate")),
+                              yes=bool(options.get("allow_duplicate")), dry_run=bool(options.get("dry_run")),
+                              careful=bool(options.get("careful")), verbose=True)
+            res = run_new(ctx, text, opts, io)
+            out = {"app_id": res.app_id, "pdf": str(res.pdf_path) if res.pdf_path else None,
+                   "company": res.company, "role": res.role, "lang": res.lang, "route": res.route,
+                   "trimmed": res.trimmed}
+            if res.app_id:
+                app = get_app(ctx, res.app_id)
+                out["unmatched"] = app.get("unmatched_requirements") or []
+                out["suggestions"] = app.get("suggestions") or []
+            return out
+        return self._run(work)
+
+    def read_clipboard(self) -> str:
+        return read_clipboard_text()
+
+    # ------------------------------------------------------------ applications
+
+    def list_apps(self) -> list[dict]:
+        ctx = self._ctx()
+        rows = db.list_applications(ctx.db())
+        return [{"id": r["id"], "date": r["created_at"][:10], "company": r["company"], "role": r["role_title"],
+                 "lang": r["lang"], "route": r["route"], "status": r["status"],
+                 "age": db.age_days(r["created_at"])} for r in rows]
+
+    def set_status(self, app_id: int, status: str) -> dict:
+        ctx = self._ctx()
+        db.set_status_many(ctx.db(), [int(app_id)], status)
+        return {"ok": True}
+
+    def preview(self, app_id: int, lang: str) -> str:
+        ctx = self._ctx()
+        from .pipeline import stored_selection
+        app = get_app(ctx, int(app_id))
+        return render_html(make_render_input(ctx.master, stored_selection(ctx, app), lang or app["lang"]))
+
+    def open_pdf(self, app_id: int, lang: str) -> str:
+        """Open the PDF in the default viewer, rendering it first if it doesn't exist."""
+        def work(job: Job) -> str:
+            ctx = self._ctx()
+            app = get_app(ctx, int(app_id))
+            path = pdf_path_for(ctx, app, lang or app["lang"])
+            if not path.exists():
+                path = rerender(ctx, int(app_id), lang, IO(out=job.lines.append))
+            _open(path)
+            return str(path)
+        return self._run(work)
+
+    def regen_app(self, app_id: int) -> str:
+        return self._run(lambda job: str(regen(self._ctx(), int(app_id), IO(out=job.lines.append))))
+
+    def open_folder(self, which: str) -> None:
+        cfg = self._ctx().cfg
+        path = {"data": cfg.data_dir, "output": cfg.output_dir}.get(which, app_home())
+        Path(path).mkdir(parents=True, exist_ok=True)
+        _open(Path(path))
+
+    def open_master(self) -> None:
+        _open(self._ctx().cfg.master_path)
+
+    # ------------------------------------------------------------ rating
+
+    def _rating_app(self):
+        from .ratings import RatingApp, RatingStore, application_candidates, file_candidates
+        ctx = self._ctx()
+        cands = application_candidates(ctx.db(), ctx.master)
+        cand_dir = ctx.cfg.data_dir / "candidates"
+        for f in sorted(cand_dir.glob("*.jsonl")) if cand_dir.exists() else []:
+            cands += file_candidates(f, ctx.master)
+        return RatingApp(cands, RatingStore(ctx.cfg.db_path))
+
+    def rate_items(self) -> list[dict]:
+        return self._rating_app().items()
+
+    def rate_cv(self, key: str, lang: str) -> str:
+        return self._rating_app().cv_html(key, lang)
+
+    def rate_job(self, key: str) -> str:
+        return self._rating_app().job_text(key)
+
+    def rate(self, key: str, rating: int, note: str = "") -> dict:
+        return self._rating_app().rate(key, int(rating), note or "")
+
+    def rate_summary(self) -> list[dict]:
+        return self._rating_app().summary()
+
+    # ------------------------------------------------------------ settings
+
+    def get_settings(self) -> dict:
+        try:
+            from dotenv import dotenv_values
+            values = dict(dotenv_values(settings_path())) if settings_path().exists() else {}
+        except ImportError:  # pragma: no cover
+            values = {}
+        return {"file": str(settings_path()),
+                "fields": [{"key": k, "label": lab, "kind": kind, "help": hlp, "value": values.get(k) or ""}
+                           for k, (lab, kind, hlp) in SETTINGS.items()]}
+
+    def save_settings(self, values: dict) -> dict:
+        from dotenv import set_key, unset_key
+        path = settings_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch(exist_ok=True)
+        for k, v in values.items():
+            if k not in SETTINGS:
+                continue
+            v = str(v).strip()
+            if v:
+                set_key(str(path), k, v, quote_mode="never")
+            else:
+                unset_key(str(path), k, quote_mode="never")
+        reload_settings()
+        return self.get_state()
+
+    # ------------------------------------------------------------ setup
+
+    def ollama_start(self) -> dict:
+        ok = ollama_setup.start()
+        return {"started": ok}
+
+    def ollama_install(self, how: str) -> dict:
+        if how == "winget" and ollama_setup.install_with_winget():
+            return {"opened": "winget"}
+        import webbrowser
+        webbrowser.open(ollama_setup.DOWNLOAD_URL)
+        return {"opened": "browser"}
+
+    def ollama_pull(self, model: str) -> str:
+        base = self._ctx().cfg.llm_base_url
+
+        def work(job: Job) -> str:
+            def on(status: str, done: int, total: int) -> None:
+                job.progress = {"status": status, "done": done, "total": total}
+            ollama_setup.pull(base, model, on)
+            return model
+        return self._run(work)
+
+    def import_data(self) -> dict:
+        """Copy master.yaml, worked examples, the database and variants from a folder the
+        user picks (e.g. the old data/ folder). Existing files are kept as .bak."""
+        import webview
+        picked = self.window.create_file_dialog(webview.FileDialog.FOLDER) if self.window else None
+        if not picked:
+            return {"copied": []}
+        src = Path(picked[0])
+        dst = self._ctx().cfg.data_dir
+        dst.mkdir(parents=True, exist_ok=True)
+        copied = []
+        for name in IMPORTABLE:
+            s, d = src / name, dst / name
+            if not s.exists():
+                continue
+            if d.exists():
+                bak = d.with_name(d.name + ".bak")
+                if bak.exists():
+                    shutil.rmtree(bak) if bak.is_dir() else bak.unlink()
+                d.rename(bak)
+            shutil.copytree(s, d) if s.is_dir() else shutil.copy2(s, d)
+            copied.append(name)
+        return {"copied": copied, "from": str(src)}
+
+
+def read_clipboard_text() -> str:
+    """The clipboard's text on Windows (Win32 API through ctypes, so tkinter isn't
+    needed in the package). Empty string elsewhere or when there's no text."""
+    if not sys.platform.startswith("win"):
+        return ""
+    import ctypes
+    from ctypes import wintypes
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32  # type: ignore[attr-defined]
+    user32.GetClipboardData.restype = wintypes.HANDLE
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    CF_UNICODETEXT = 13
+    if not user32.OpenClipboard(None):
+        return ""
+    try:
+        handle = user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return ""
+        ptr = kernel32.GlobalLock(handle)
+        try:
+            return ctypes.wstring_at(ptr) if ptr else ""
+        finally:
+            kernel32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+
+
+def _open(path: Path) -> None:
+    if sys.platform.startswith("win"):
+        os.startfile(str(path))  # type: ignore[attr-defined]
+    else:
+        import subprocess
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(path)])
+
+
+def main() -> None:
+    import webview
+    if is_portable():
+        ensure_portable_layout()
+    reload_settings()
+    api = Api()
+    window = webview.create_window("CV Tailor", url=str(UI_DIR / "index.html"), js_api=api,
+                                   width=1280, height=860, min_size=(900, 600))
+    api.window = window
+    # WebView2 keeps its cache in Data/webview, not in the user profile.
+    data, _, _ = default_dirs()
+    webview.start(private_mode=False, storage_path=str(data / "webview"))
+
+
+if __name__ == "__main__":
+    main()

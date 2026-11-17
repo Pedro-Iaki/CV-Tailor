@@ -52,7 +52,7 @@ from cvtailor.pipeline import (
     run_new,
     save_edit,
 )
-from cvtailor.render import WeasyPrintMissing, WeasyRenderer
+from cvtailor.render import PdfEngineMissing
 from cvtailor.schema import Selection
 from cvtailor.stats import compute_stats, fmt_rate, variant_usage
 from cvtailor.trim import PageFitError, fit_to_page
@@ -69,7 +69,7 @@ app = typer.Typer(add_completion=False, no_args_is_help=True,
                   help="Tailor a one-page bilingual CV to a job description by selecting verified content.")
 
 # ValueError covers bad JSON in render-file; ValidationError covers a selection file of the wrong shape.
-KNOWN_ERRORS = (PipelineError, MasterError, WeasyPrintMissing, LLMError, PageFitError, FactError,
+KNOWN_ERRORS = (PipelineError, MasterError, PdfEngineMissing, LLMError, PageFitError, FactError,
                 ValidationError, ValueError)
 
 
@@ -173,7 +173,7 @@ def render_file(
             raise PipelineError("invalid selection:\n  - " + "\n  - ".join(errors))
         target = out_dir or ctx.cfg.output_dir / "dev"
         target.mkdir(parents=True, exist_ok=True)
-        renderer = WeasyRenderer()
+        renderer = ctx.get_renderer()
         for lg in ([lang] if lang else ["en", "pt"]):
             fit = fit_to_page(sel, ctx.master, lg, renderer.render, trim=not no_trim,
                               on_remove=lambda i, t: typer.echo(f"  trimmed {i}: {t}"))

@@ -1,18 +1,53 @@
-"""Paths, environment settings and output naming."""
+"""Paths, environment settings and output naming.
+
+Two layouts:
+- Source checkout: data/, output/ and .env in the repository (as before).
+- Portable app (the packaged CV Tailor.exe, or CV_PORTABLE=1): everything lives next
+  to the executable, so the folder can be moved or copied as a whole:
+  Data/ (settings.env, master.yaml, applications.db, variants/, webview cache) and
+  Output/ (PDFs). Nothing is written to the registry or the user profile.
+"""
 
 from __future__ import annotations
 
 import os
 import re
+import sys
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TEMPLATES_DIR = ROOT / "templates"
+FROZEN = bool(getattr(sys, "frozen", False))  # running as the PyInstaller-built app
+# Read-only resources (templates) ship inside the app bundle when frozen.
+RESOURCES = Path(getattr(sys, "_MEIPASS", ROOT)) if FROZEN else ROOT
+TEMPLATES_DIR = RESOURCES / "templates"
 
 DEFAULT_MODEL = "claude-haiku-5-5"
 DEFAULT_PDF_NAME = "{name}_CV_{role}_{LANG}"
+
+
+def is_portable() -> bool:
+    return FROZEN or os.environ.get("CV_PORTABLE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def app_home() -> Path:
+    """The portable app's folder (next to the exe), or the repository."""
+    if FROZEN:
+        return Path(sys.executable).resolve().parent
+    return Path(os.environ.get("CV_APP_HOME") or ROOT)
+
+
+def default_dirs() -> tuple[Path, Path, Path]:
+    """(data dir, output dir, settings file) for the current layout."""
+    home = app_home()
+    if is_portable():
+        return home / "Data", home / "Output", home / "Data" / "settings.env"
+    return ROOT / "data", ROOT / "output", ROOT / ".env"
+
+
+def settings_path() -> Path:
+    return default_dirs()[2]
 
 
 def _load_dotenv() -> None:
@@ -20,7 +55,7 @@ def _load_dotenv() -> None:
         from dotenv import load_dotenv
     except ImportError:  # pragma: no cover
         return
-    load_dotenv(ROOT / ".env", override=False)
+    load_dotenv(settings_path(), override=False)  # real environment variables win
 
 
 @dataclass
@@ -48,6 +83,7 @@ class Config:
     # model's default, which for Qwen means thinking on). None: same as llm_reasoning.
     careful_reasoning: str | None = None
     embed_model: str | None = None  # Ollama embedding model for relevance hints (optional)
+    pdf_engine: str = "auto"  # auto | browser (Edge/Chrome) | weasyprint
 
     @property
     def worked_examples_path(self) -> Path:
@@ -56,8 +92,9 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         _load_dotenv()
-        data_dir = Path(os.environ.get("CV_DATA_DIR") or ROOT / "data")
-        output_dir = Path(os.environ.get("CV_OUTPUT_DIR") or ROOT / "output")
+        default_data, default_output, _ = default_dirs()
+        data_dir = Path(os.environ.get("CV_DATA_DIR") or default_data)
+        output_dir = Path(os.environ.get("CV_OUTPUT_DIR") or default_output)
         master = Path(os.environ.get("CV_MASTER") or data_dir / "master.yaml")
         try:
             threshold = float(os.environ.get("ROUTE_THRESHOLD") or 0.6)
@@ -93,6 +130,7 @@ class Config:
             careful_reasoning=(os.environ["CV_LLM_CAREFUL_REASONING"].strip().lower()
                                if "CV_LLM_CAREFUL_REASONING" in os.environ else None),
             embed_model=os.environ.get("CV_LLM_EMBED_MODEL", "").strip() or None,
+            pdf_engine=os.environ.get("CV_PDF_ENGINE", "").strip().lower() or "auto",
         )
 
 

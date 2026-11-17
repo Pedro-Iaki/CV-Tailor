@@ -44,7 +44,7 @@ from .pipeline import (
     run_new,
     save_edit,
 )
-from .render import WeasyPrintMissing
+from .render import PdfEngineMissing
 from .schema import Selection
 from .stats import compute_stats, variant_usage
 from .trim import PageFitError
@@ -68,7 +68,7 @@ become reusable facts; approved new claims are stored as UNSAFE and can only be
 promoted by the user in a terminal (`apply.py unsafe promote <id>`); no tool can do it.
 """
 
-KNOWN_ERRORS = (PipelineError, MasterError, LLMError, WeasyPrintMissing, PageFitError,
+KNOWN_ERRORS = (PipelineError, MasterError, LLMError, PdfEngineMissing, PageFitError,
                 VariantError, FactError, ValidationError, ValueError, KeyError)
 
 # Overridable in tests.
