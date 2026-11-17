@@ -54,6 +54,9 @@ Hard rules:
   a job or project it does not belong to.
 - Respect the limits provided (min and max bullets per job, max bullets per
   project, max total bullets counting job and project bullets, max projects).
+  The total is one budget shared by every entry: decide how many bullets each
+  entry gets before ranking them, give more to the entries most relevant to the
+  job, and add up the bullets you kept before answering.
 - Order bullets within each job and project, and the projects themselves, by
   relevance to the job description, most relevant first.
 - If the job asks for something with no matching item, do not invent coverage.
