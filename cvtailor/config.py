@@ -39,6 +39,9 @@ class Config:
     llm_api_key: str | None = None
     llm_timeout: float = 600.0
     llm_reasoning: str | None = None  # local server only: reasoning_effort (low/medium/high)
+    # Local server only: output-token cap per call, thinking included. Keep it at most
+    # the server's context window minus the prompt (about 4.5k tokens).
+    llm_max_tokens: int = 4096
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -55,6 +58,10 @@ class Config:
             timeout = float(os.environ.get("CV_LLM_TIMEOUT") or 600)
         except ValueError:
             timeout = 600.0
+        try:
+            max_tokens = max(256, int(os.environ.get("CV_LLM_MAX_TOKENS") or 4096))
+        except ValueError:
+            max_tokens = 4096
         return cls(
             data_dir=data_dir,
             output_dir=output_dir,
@@ -71,6 +78,7 @@ class Config:
             llm_api_key=os.environ.get("CV_LLM_API_KEY", "").strip() or None,
             llm_timeout=timeout,
             llm_reasoning=os.environ.get("CV_LLM_REASONING", "").strip().lower() or None,
+            llm_max_tokens=max_tokens,
         )
 
 

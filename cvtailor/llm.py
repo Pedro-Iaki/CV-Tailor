@@ -142,6 +142,10 @@ class LLMError(Exception):
     pass
 
 
+class Truncated(LLMError):
+    """The answer was cut off at max_tokens (often a model thinking for too long)."""
+
+
 @dataclass
 class Usage:
     input_tokens: int = 0
@@ -289,7 +293,9 @@ def _text_of(resp: Any) -> str:
     if stop == "refusal":
         raise LLMError("the model declined the request (stop_reason=refusal)")
     if stop == "max_tokens":
-        raise LLMError("the model hit max_tokens before finishing the JSON")
+        out = getattr(getattr(resp, "usage", None), "output_tokens", None)
+        raise Truncated("the model hit max_tokens before finishing the JSON"
+                        + (f" ({out} output tokens)" if out else ""))
     for block in getattr(resp, "content", []) or []:
         if getattr(block, "type", None) == "text":
             return block.text
@@ -301,15 +307,19 @@ def _text_of(resp: Any) -> str:
 class LLM:
     """Calls go to the Anthropic API, or to `client` when one is given (for example a
     local_llm.LocalClient). count_limits puts the bullet limits into the schema;
-    choices uses the choice format of choices.py for the selection call."""
+    choices uses the choice format of choices.py for the selection call; max_output caps
+    every call's max_tokens (local models: a runaway answer fails fast instead of
+    running for many minutes, and stays inside the server's context window)."""
 
     def __init__(self, model: str, effort: Optional[str] = "low", client: Any = None,
-                 count_limits: bool = False, choices: bool = False):
+                 count_limits: bool = False, choices: bool = False,
+                 max_output: Optional[int] = None):
         self.model = model
         self.effort = effort
         self._client = client
         self.count_limits = count_limits
         self.choices = choices
+        self.max_output = max_output
 
     @property
     def client(self) -> Any:
@@ -325,6 +335,8 @@ class LLM:
         output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": schema}}
         if self.effort:
             output_config["effort"] = self.effort
+        if self.max_output:
+            max_tokens = min(max_tokens, self.max_output)
         kwargs = dict(
             model=self.model,
             max_tokens=max_tokens,
@@ -408,7 +420,12 @@ class LLM:
             resp = self._call(system=system, user=user, schema=schema, max_tokens=16000)
             usage = usage.add(Usage.from_response(resp))
             try:
-                data = json.loads(_text_of(resp))
+                text = _text_of(resp)
+            except Truncated as e:  # counts as a failed attempt: one retry, asking for brevity
+                errors = [f"{e}. Keep your reasoning short and answer with the JSON."]
+                continue
+            try:
+                data = json.loads(text)
                 if self.choices and isinstance(data, dict):
                     data = choices.decode(data, master)
                 sel = LLMSelection.model_validate(data)

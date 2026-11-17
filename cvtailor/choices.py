@@ -152,12 +152,20 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
     s = copy.deepcopy(plain)
     props = s["properties"]
     hidden = {b for ms in ch.groups.values() for b in ms[1:]}
-    for p in props["bullets"]["properties"].values():
-        if "enum" in p["items"]:
-            p["items"]["enum"] = [b for b in p["items"]["enum"] if b not in hidden]
-            if "maxItems" in p:
-                p["maxItems"] = min(p["maxItems"], len(p["items"]["enum"]))
-                p["minItems"] = min(p["minItems"], p["maxItems"])
+    owners = props["bullets"]["properties"]
+    for owner, p in owners.items():
+        if "enum" not in p["items"]:
+            continue
+        ids = [b for b in p["items"]["enum"] if b not in hidden]
+        # One rank per bullet (0 = left out, 1 = first...). Object keys cannot repeat,
+        # so a bullet can't be listed twice; ranks are capped at the owner's maximum.
+        top = min(p.get("maxItems", len(ids)), len(ids))
+        owners[owner] = {
+            "type": "object",
+            "properties": {b: {"type": "integer", "enum": list(range(top + 1))} for b in ids},
+            "required": ids,
+            "additionalProperties": False,
+        }
 
     new: dict[str, Any] = {"key_requirements": SCRATCHPAD, "summary_id": props.pop("summary_id")}
     if ch.groups:
@@ -221,7 +229,7 @@ def decode(data: dict[str, Any], master: Master | None = None) -> dict[str, Any]
     d.pop("key_requirements", None)
     versions = d.pop("bullet_versions", None) or {}
     if isinstance(d.get("bullets"), dict) and isinstance(versions, dict):
-        d["bullets"] = {o: [versions.get(b, b) if isinstance(b, str) else b for b in (ids or [])]
+        d["bullets"] = {o: [versions.get(b, b) if isinstance(b, str) else b for b in _ranked(ids)]
                         for o, ids in d["bullets"].items()}
     if "skills" in d:
         skills = d.pop("skills") or {}
@@ -240,14 +248,27 @@ def decode(data: dict[str, Any], master: Master | None = None) -> dict[str, Any]
     return d
 
 
+def _ranked(value: Any) -> list[Any]:
+    """{bullet: rank} -> bullets with rank > 0, by rank. Equal ranks keep the order the
+    answer listed them in (the schema's order, which is the master order). A plain
+    list passes through unchanged."""
+    if isinstance(value, dict):
+        ranked = [(r, i, b) for i, (b, r) in enumerate(value.items())
+                  if isinstance(r, int) and not isinstance(r, bool) and r > 0]
+        return [b for _, _, b in sorted(ranked)]
+    return list(value or [])
+
+
 # ---------------------------------------------------------------- prompt
 
 def system_prompt(base: str) -> str:
-    """The plain selection prompt with the alternatives rule rewritten for this format."""
-    old = _OLD_RULE
-    if old not in base:  # pragma: no cover - guarded by a test
-        raise RuntimeError("selection prompt changed; update choices._OLD_RULE")
-    return base.replace(old, _NEW_RULE).replace(_OLD_INTRO, _NEW_INTRO)
+    """The plain selection prompt with the list and alternatives rules rewritten for
+    this format."""
+    for old, new in _REWRITES:
+        if old not in base:  # pragma: no cover - guarded by a test
+            raise RuntimeError(f"selection prompt changed; update choices._REWRITES: {old[:40]!r}")
+        base = base.replace(old, new)
+    return base
 
 
 _OLD_RULE = """\
@@ -258,9 +279,12 @@ _OLD_RULE = """\
 """
 
 _NEW_RULE = """\
-- A bullet with "versions" is ONE bullet written in several ways. To use it, list its
-  "id" under "bullets" like any other bullet, and pick the wording that fits the job
-  best under "bullet_versions" (every such bullet needs a pick there, used or not).
+- Under "bullets", every job, project and education entry gives EACH of its bullets a
+  number: 0 leaves it out, 1 puts it first, 2 second, and so on. Use each number at
+  most once per entry.
+- A bullet with "versions" is ONE bullet written in several ways. To use it, number
+  its "id" under "bullets" like any other bullet, and pick the wording that fits the
+  job best under "bullet_versions" (every such bullet needs a pick there, used or not).
 - An item may list "never_with": ids it must never be selected together with.
 - Skills: choose ONE entry of "skill_layouts" and put its id in skills.layout. Then
   list only that layout's categories, each in its own tier, most relevant first.
@@ -278,3 +302,13 @@ _NEW_INTRO = (
     "First, under \"key_requirements\", write the 3 to 5 most important requirements of the\n"
     "job in a few words each. Base every choice on them.\n\nHard rules:\n"
 )
+
+# (old, new) pairs applied to llm.SELECTION_SYSTEM_PROMPT, in order.
+_REWRITES = [
+    (_OLD_RULE, _NEW_RULE),
+    (_OLD_INTRO, _NEW_INTRO),
+    ("A project you do not pick gets an empty list.",
+     "A project you do not pick gets 0 for every bullet."),
+    ("education id; otherwise give it an empty list.",
+     "education id; otherwise give them 0."),
+]

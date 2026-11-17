@@ -89,7 +89,8 @@ class Context:
                 from .local_llm import LocalClient
                 client = LocalClient(self.cfg.llm_base_url, self.cfg.llm_api_key, self.cfg.llm_timeout,
                                      self.cfg.llm_reasoning)
-                self.llm = LLM(self.cfg.model, None, client=client, count_limits=True, choices=True)
+                self.llm = LLM(self.cfg.model, None, client=client, count_limits=True, choices=True,
+                               max_output=self.cfg.llm_max_tokens)
             else:
                 self.llm = LLM(self.cfg.model, self.cfg.effort)
         return self.llm

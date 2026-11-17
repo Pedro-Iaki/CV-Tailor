@@ -3,9 +3,11 @@
 import json
 import re
 
+import pytest
+
 from cvtailor import choices
 from cvtailor.config import Config
-from cvtailor.llm import LLM, SELECTION_SYSTEM_PROMPT, build_selection_schema
+from cvtailor.llm import LLM, SELECTION_SYSTEM_PROMPT, LLMError, build_selection_schema
 from cvtailor.local_llm import LocalClient
 from cvtailor.master import parse_master
 from cvtailor.editor import parse_annotated, to_annotated_yaml
@@ -59,8 +61,14 @@ def test_schema(master_dict):
     s = choices.build_schema(m, plain, count_limits=True)
     props = s["properties"]
     assert list(props)[:2] == ["key_requirements", "summary_id"] and s["required"] == list(props)
-    acme = props["bullets"]["properties"]["job-acme"]["items"]["enum"]
+    acme_schema = props["bullets"]["properties"]["job-acme"]
+    acme = acme_schema["required"]
     assert "acme-dbx-pipeline-01" in acme and not {"acme-dbx-short-01b", "acme-dbx-short-01c"} & set(acme)
+    # one rank per bullet: keys can't repeat; ranks capped at max_bullets_per_job (5)
+    assert acme_schema["type"] == "object" and acme_schema["additionalProperties"] is False
+    assert acme_schema["properties"]["acme-delta-02"] == {"type": "integer", "enum": [0, 1, 2, 3, 4, 5]}
+    proj = props["bullets"]["properties"]["proj-airflow-demo"]["properties"]["lakehouse-dags-01"]
+    assert proj["enum"] == [0, 1, 2]  # project with 2 bullets
     assert props["bullet_versions"]["properties"] == {"acme-dbx-pipeline-01": {"type": "string", "enum": GROUP}}
     assert "skill_category_order" not in props
     branches = props["skills"]["anyOf"]
@@ -101,14 +109,28 @@ def test_decode_maps_slots_and_layout():
                    "skill_category_order": {"hands_on": ["a"], "working": [], "familiar": [], "languages": ["b"]}}
 
 
+def test_decode_ranks():
+    out = choices.decode({
+        "summary_id": "s",
+        "bullet_versions": {"acme-dbx-pipeline-01": "acme-dbx-short-01c"},
+        "bullets": {"job-acme": {"acme-dbx-pipeline-01": 2, "acme-delta-02": 0, "acme-adf-03": 1,
+                                 "acme-cicd-04": 3, "acme-cost-05": 3},   # tie: keeps listed order
+                    "proj-x": {"a": 0, "b": 0}},
+    })
+    assert out["bullets"] == {"job-acme": ["acme-adf-03", "acme-dbx-short-01c", "acme-cicd-04", "acme-cost-05"],
+                              "proj-x": []}
+
+
 def test_prompt_rewritten():
     p = choices.system_prompt(SELECTION_SYSTEM_PROMPT)
     assert "bullet_versions" in p and "skill_layouts" in p and "key_requirements" in p
     assert "either the categories on one side or the other" not in p
+    assert "empty list" not in p and "0 leaves it out" in p
 
 
 def _choice_answer(selection_dict, **over):
     d = dict(selection_dict)
+    d["bullets"] = {o: {b: i + 1 for i, b in enumerate(ids)} for o, ids in d["bullets"].items()}  # ranks
     order = d.pop("skill_category_order")
     d.update(key_requirements=["Spark"], bullet_versions={"acme-dbx-pipeline-01": "acme-dbx-short-01b"},
              skills={"layout": "layout-1", **order, "languages": ["langs"]},
@@ -132,9 +154,10 @@ def test_select_end_to_end(monkeypatch, master_dict, selection_dict):
 
 
 def test_decoded_answer_is_still_validated(monkeypatch, master_dict, selection_dict):
-    """A slot listed twice decodes to a duplicate id, which the validator rejects."""
+    """Ranks decode to a plain selection that is validated as usual (here: too many bullets)."""
     m = alt_master(master_dict)
-    acme = ["acme-dbx-pipeline-01", "acme-dbx-pipeline-01"]
+    acme = {b: i + 1 for i, b in enumerate(["acme-dbx-pipeline-01", "acme-delta-02", "acme-adf-03",
+                                            "acme-cicd-04", "acme-cost-05", "acme-streaming-06"])}
     bad = _choice_answer(selection_dict, bullets={**selection_dict["bullets"], "job-acme": acme})
     good = _choice_answer(selection_dict)
     http = FakeHTTP(monkeypatch, chat(json.dumps(bad)), chat(json.dumps(good)))
@@ -142,7 +165,24 @@ def test_decoded_answer_is_still_validated(monkeypatch, master_dict, selection_d
     sel, _ = llm.select("job", m)
     assert isinstance(sel, LLMSelection) and len(http.requests) == 2
     retry = http.requests[1]["body"]["messages"][1]["content"]
-    assert "'acme-dbx-short-01b' appears 2 times" in retry
+    assert "job-acme: 6 bullets, above max_bullets_per_job (5)" in retry
+
+
+def test_truncated_answer_is_retried_once(monkeypatch, master_dict, selection_dict):
+    m = alt_master(master_dict)
+    good = chat(json.dumps(_choice_answer(selection_dict)))
+    http = FakeHTTP(monkeypatch, chat("", finish="length", usage=(4000, 4096)), good)
+    llm = LLM("m", None, client=LocalClient("http://h/v1"), count_limits=True, choices=True, max_output=4096)
+    sel, usage = llm.select("job", m)
+    assert usage.output_tokens == 4096 + 30
+    assert all(r["body"]["max_tokens"] == 4096 for r in http.requests)  # 16000 capped
+    retry = http.requests[1]["body"]["messages"][1]["content"]
+    assert "max_tokens before finishing the JSON (4096 output tokens)" in retry
+    assert "Keep your reasoning short" in retry
+
+    FakeHTTP(monkeypatch, chat("", finish="length"), chat("", finish="length"))
+    with pytest.raises(LLMError, match="max_tokens"):  # twice: the run stops
+        llm.select("job", m)
 
 
 def test_no_alternatives_keeps_plain_shape(master):
@@ -215,10 +255,14 @@ def test_skill_items_in_schema_and_decode(master_dict):
 
 def test_config_and_context(monkeypatch, make_ctx):
     monkeypatch.setenv("CV_LLM_REASONING", "Low")
-    assert Config.from_env().llm_reasoning == "low"
+    monkeypatch.setenv("CV_LLM_MAX_TOKENS", "6000")
+    cfg = Config.from_env()
+    assert (cfg.llm_reasoning, cfg.llm_max_tokens) == ("low", 6000)
+    monkeypatch.setenv("CV_LLM_MAX_TOKENS", "lots")
+    assert Config.from_env().llm_max_tokens == 4096
     ctx = make_ctx()
     ctx.llm = None
     ctx.cfg.llm_base_url = "http://localhost:11434/v1"
     ctx.cfg.llm_reasoning = "low"
     llm = ctx.get_llm()
-    assert llm.choices and llm.client.reasoning == "low"
+    assert llm.choices and llm.client.reasoning == "low" and llm.max_output == 4096
