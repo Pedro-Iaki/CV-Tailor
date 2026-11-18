@@ -212,7 +212,7 @@ See [examples/master.example.yaml](examples/master.example.yaml). Besides summar
 - `description_alts` on a job or project: other versions of its description, each with an id and tags. A description's `alt_of` can list bullets of the same entry that it already covers.
 - Skill categories with `alt_of` form alternative layouts of the same skills (for example "by area" vs. one "Hands-on" line plus a "Working knowledge" line). A skill may repeat between a category and its alternatives. Two categories that replace the same one can be used together, as halves of one layout.
 - `skills.languages`: spoken languages, always rendered last, one line per category.
-- `profile.headline_alts`: other lines under the name (each with `id`, `en`, `pt`, optional `tags`), such as "Analytics Engineer". The selector keeps the default unless the job's own title is one of them. A picked option wins over a summary's headline.
+- `profile.headline_alts`: other lines under the name (each with `id`, `en`, `pt`, optional `tags`), such as "Analytics Engineer". An option is only offered to the selector when the top of the posting names that role (word for word, in English or Portuguese); otherwise the default stays. A picked option wins over a summary's headline.
 - `only_for_tags` on a project: the selector only sees the project when the job description mentions one of these tags (for example an AI project only for postings that mention AI). A manual selection can still include it.
 - `required: true` on a skill category: it must be listed unless one of its alternatives is (for example the Working knowledge line of a by-level layout). `min_items: N`: when listed, it shows at least N of its items. Local models get both in the grammar; validation checks them for every model.
 

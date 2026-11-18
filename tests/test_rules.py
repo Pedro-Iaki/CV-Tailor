@@ -143,3 +143,15 @@ def test_ranks_min_count():
     one = choices._ranks(["a", "b"], 2, at_least_one=True)
     assert len(one["anyOf"]) == 2
     assert choices._ranks(["a", "b"], 2, at_least_one=False)["required"] == ["a", "b"]
+
+
+def test_headline_options_only_when_the_title_names_the_role(master_dict):
+    from cvtailor.master import gate_headlines
+    m = parse_master(_headlines(master_dict))
+    assert gate_headlines(m, "Data Engineer - Acme\nWe use dbt and analytics.").profile.headline_alts == []
+    kept = gate_headlines(m, "Analytics Engineer (pleno) - Lumen\nModels in dbt.").profile.headline_alts
+    assert [h.id for h in kept] == ["hl-analytics"]
+    pt = gate_headlines(m, "Vaga: Engenheira de Analytics na Lumen").profile.headline_alts
+    assert [h.id for h in pt] == ["hl-analytics"]
+    late = "Data Engineer\n" + "x " * 300 + "Analytics Engineer"  # far below the title
+    assert gate_headlines(m, late).profile.headline_alts == []

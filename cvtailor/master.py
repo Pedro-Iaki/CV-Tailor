@@ -357,6 +357,43 @@ def tag_vocabulary(m: Master) -> set[str]:
     return tags
 
 
+TITLE_AREA = 400  # characters at the top of a posting where its job title is
+
+
+def _title_words(text: str) -> list[str]:
+    """Lowercase, accent-free words of 2+ characters ("Engenheiro(a)" -> "engenheiro")."""
+    import unicodedata
+    plain = unicodedata.normalize("NFKD", text.lower()).encode("ascii", "ignore").decode()
+    return [w for w in re.findall(r"[a-z0-9]+", plain) if len(w) >= 2]
+
+
+def _names_role(phrase: str, top: list[str]) -> bool:
+    """The phrase's words appear in order in `top`. Words of 5+ letters may differ in
+    their last letter (Portuguese o/a: engenheiro, engenheira)."""
+    want = _title_words(phrase)
+
+    def same(a: str, b: str) -> bool:
+        return a == b or (len(a) >= 5 and len(b) == len(a) and a[:-1] == b[:-1])
+    return bool(want) and any(all(same(w, top[i + k]) for k, w in enumerate(want))
+                              for i in range(len(top) - len(want) + 1))
+
+
+def gate_headlines(m: Master, job_text: str) -> Master:
+    """Headline options are only offered when the top of the posting names that role
+    (the option's English or Portuguese text, word for word). Otherwise the CV keeps
+    the default headline."""
+    if not m.profile.headline_alts:
+        return m
+    top = _title_words(job_text[:TITLE_AREA])
+
+    def named(h) -> bool:
+        return _names_role(h.en, top) or _names_role(h.pt, top)
+    keep = [h for h in m.profile.headline_alts if named(h)]
+    if len(keep) == len(m.profile.headline_alts):
+        return m
+    return m.model_copy(update={"profile": m.profile.model_copy(update={"headline_alts": keep})})
+
+
 def gate_projects(m: Master, job_tags: Iterable[str]) -> Master:
     """The master as the selector sees it for one job: projects with only_for_tags are
     left out unless the job mentions one of those tags. The selection is validated
