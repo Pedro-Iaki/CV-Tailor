@@ -19,7 +19,7 @@ from typing import Any, Callable, Optional
 from . import db
 from .config import Config, app_folder_name, company_key, pdf_filename
 from .llm import LLM, LLMError, Usage
-from .master import item_index, item_text, load_master
+from .master import gate_projects, item_index, item_text, load_master
 from .render import Renderer, make_render_input, make_renderer
 from .route import RouteResult, route
 from .schema import TIERS, LLMSelection, Master, Meta, Selection
@@ -177,6 +177,9 @@ def select_with_llm(ctx: "Context", text: str, master: Master, matches: dict[str
     """The LLM selection step: one call, or careful mode (careful.py) when asked for
     by the option or by CV_LLM_MODE=careful."""
     llm = ctx.get_llm()
+    # Projects with only_for_tags the job doesn't mention are hidden from the model,
+    # and its answer is validated against this view, so it can't pick them.
+    master = gate_projects(master, matches)
     if not (careful or ctx.cfg.careful):
         return llm.select(text, master)
     from .careful import careful_select, load_examples

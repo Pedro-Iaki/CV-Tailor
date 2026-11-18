@@ -80,10 +80,13 @@ def build_context(ri: RenderInput) -> dict[str, Any]:
 
     pr = m.profile
     summary = idx[sel.summary_id].obj
+    # A picked headline option wins; otherwise a summary can bring its own headline.
+    alt = next((h for h in pr.headline_alts if h.id == sel.headline_id), None)
+    headline = (getattr(alt, lang) if alt else
+                txt(summary.headline if summary.headline is not None else pr.headline))
     profile = {
         "name": pr.name,
-        # a summary can bring its own headline
-        "headline": txt(summary.headline if summary.headline is not None else pr.headline),
+        "headline": headline,
         "contact": [x for x in (pr.email, pr.phone, pr.location) if x],
         "links": links(pr.links),
     }

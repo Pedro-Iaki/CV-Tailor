@@ -38,18 +38,23 @@ Hard rules:
   go under "bullets" keyed by the project id (from none up to the project
   maximum). A project you do not pick gets an empty list.
 - "education_details" lists optional detail lines (such as coursework) of an
-  education entry. Put the ones that help this job under "bullets" keyed by the
-  education id; otherwise give it an empty list.
+  education entry. Use them only when the job asks for those specific skills; the
+  degree name already implies its general subjects. Put the ones that help under
+  "bullets" keyed by the education id; otherwise give it an empty list.
 - Some items are alternative versions of each other: an item's "never_with" lists
   the ids it must never be selected together with (anywhere in the selection). Pick
   the version that fits the job best. For skills, alternatives are whole layouts:
   either the categories on one side or the other, never a mix.
 - A summary may carry a "headline" (the line under the name); picking the summary
-  picks its headline too.
+  picks its headline too. If the index has "headline_options", put one id in
+  "headline_id": keep "default" unless the job's own title is the role another
+  option names.
 - A job or project with "description_options" needs one option id under
   "descriptions" (keyed by the job or project id); "default" keeps the default.
 - Never move a skill category between tiers. You may only reorder categories
   within their own tier or omit them. The "languages" tier holds spoken languages.
+  A category marked "required" must be listed unless one of its alternatives is;
+  one with "min_items" shows at least that many of its items when listed.
 - Never include an id that is not in the index, and never list a bullet under
   a job or project it does not belong to.
 - Respect the limits provided (min and max bullets per job, max bullets per
@@ -57,6 +62,12 @@ Hard rules:
   The total is one budget shared by every entry: decide how many bullets each
   entry gets before ranking them, give more to the entries most relevant to the
   job, and add up the bullets you kept before answering.
+- Size each job and project by its relevance to this job: the most relevant
+  entries get up to their maximum, the least relevant only the minimum. A project
+  whose stack or subject the job asks for should get nearly all of its bullets;
+  one unrelated to the job is better left out.
+- Prefer bullets that directly show a requirement the job names (for example, a
+  CI/CD bullet when it mentions deployment or pipelines) over general ones.
 - Order bullets within each job and project, and the projects themselves, by
   relevance to the job description, most relevant first.
 - If the job asks for something with no matching item, do not invent coverage.
@@ -230,6 +241,9 @@ def build_selection_schema(master: Master, count_limits: bool = False) -> dict[s
     desc_props = {o.id: {"type": "string", "enum": ["default", *(d.id for d in o.description_alts)]}
                   for o in [*master.jobs, *master.projects] if o.description_alts}
     extra: dict[str, Any] = {}
+    if master.profile.headline_alts:
+        extra["headline_id"] = {"type": "string",
+                                "enum": ["default", *(h.id for h in master.profile.headline_alts)]}
     if desc_props:
         extra["descriptions"] = {"type": "object", "properties": desc_props,
                                  "required": list(desc_props), "additionalProperties": False}

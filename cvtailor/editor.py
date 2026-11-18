@@ -59,6 +59,16 @@ def to_annotated_yaml(sel: Selection, master: Master, errors: Optional[list[str]
         if alt.id != sel.summary_id:
             out.append(f"# summary_id: {alt.id}   # {_note(alt.en)}")
 
+    # headline options
+    heads = {h.id: h.en for h in master.profile.headline_alts}
+    if heads or sel.headline_id:
+        cur = sel.headline_id or "default"
+        options = {"default": text_of(master.profile.headline, "en") if master.profile.headline else "", **heads}
+        out.append(f"headline_id: {cur}   # {_note(options.get(cur, '(unknown id)'))}")
+        for hid, text in options.items():
+            if hid != cur:
+                out.append(f"# headline_id: {hid}   # {_note(text)}")
+
     # projects
     out.append("project_ids:")
     for pid in sel.project_ids:

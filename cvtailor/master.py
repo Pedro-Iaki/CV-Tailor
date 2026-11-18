@@ -122,6 +122,8 @@ def check_master(m: Master) -> list[str]:
             see(d.id, f"description_alts of {o.id}")
     for tier, c in _iter_skill_categories(m):
         see(c.id, f"skills.{tier}")
+    for h in m.profile.headline_alts:
+        see(h.id, "profile.headline_alts")
 
     # 2. non-empty bilingual text
     def need_text(obj: Any, where: str) -> None:
@@ -141,6 +143,10 @@ def check_master(m: Master) -> list[str]:
         need_text(m.profile.headline, "profile headline")
     for i, link in enumerate(m.profile.links):
         need_text(link.label, f"profile link {i + 1} label")
+    for h in m.profile.headline_alts:
+        need_text(h, f"headline {h.id}")
+    if m.profile.headline_alts and m.profile.headline is None:
+        errors.append("profile: headline_alts need a default headline")
 
     for s in m.summaries:
         need_text(s, f"summary {s.id}")
@@ -174,6 +180,8 @@ def check_master(m: Master) -> list[str]:
             errors.append(f"education {e.id}: 'expected' needs an end date")
     for tier, c in _iter_skill_categories(m):
         need_text(c.category, f"skill category {c.id}")
+        if c.min_items is not None and not 1 <= c.min_items <= len(c.items):
+            errors.append(f"skill category {c.id}: min_items must be between 1 and its {len(c.items)} items")
         for i, item in enumerate(c.items):
             if isinstance(item, Bilingual):
                 need_text(item, f"skill category {c.id} item {i + 1}")
@@ -240,6 +248,11 @@ def check_master(m: Master) -> list[str]:
         check_tags(p.tags, f"project {p.id}")
         for b in p.bullets:
             check_tags(b.tags, f"bullet {b.id}")
+        if p.only_for_tags:
+            check_tags(p.only_for_tags, f"project {p.id} only_for_tags")
+    for h in m.profile.headline_alts:
+        if h.tags:
+            check_tags(h.tags, f"headline {h.id}")
     for e in m.education:
         for b in e.bullets:
             check_tags(b.tags, f"bullet {b.id}")
@@ -330,6 +343,7 @@ def tag_vocabulary(m: Master) -> set[str]:
             tags.update(b.tags)
     for p in m.projects:
         tags.update(p.tags)
+        tags.update(p.only_for_tags)
         for b in p.bullets:
             tags.update(b.tags)
     for e in m.education:
@@ -338,7 +352,20 @@ def tag_vocabulary(m: Master) -> set[str]:
     for o in [*m.jobs, *m.projects]:
         for d in o.description_alts:
             tags.update(d.tags)
+    for h in m.profile.headline_alts:
+        tags.update(h.tags)
     return tags
+
+
+def gate_projects(m: Master, job_tags: Iterable[str]) -> Master:
+    """The master as the selector sees it for one job: projects with only_for_tags are
+    left out unless the job mentions one of those tags. The selection is validated
+    against this copy, so a gated project can't be selected."""
+    tags = set(job_tags)
+    keep = [p for p in m.projects if not p.only_for_tags or tags & set(p.only_for_tags)]
+    if len(keep) == len(m.projects):
+        return m
+    return m.model_copy(update={"projects": keep})
 
 
 @dataclass
@@ -468,7 +495,14 @@ def _descriptions(o: Any, conflicts: dict[str, set[str]]) -> dict[str, Any]:
 def build_llm_index(m: Master) -> str:
     """Compact, deterministic JSON index sent to the selection model. No profile data."""
     cx = alt_conflicts(m)
+    headlines: dict[str, Any] = {}
+    if m.profile.headline_alts:
+        headlines["headline_options"] = [
+            {"id": "default", "text": text_of(m.profile.headline)},
+            *({"id": h.id, "text": h.en} | ({"tags": h.tags} if h.tags else {}) for h in m.profile.headline_alts),
+        ]
     idx = {
+        **headlines,
         "summaries": [_index_item(s, cx) for s in m.summaries],
         "jobs": [
             {
@@ -503,6 +537,8 @@ def build_llm_index(m: Master) -> str:
                 "tier": tier,
                 "category": c.category.en,
                 "items": [skill_item_text(i, "en") for i in c.items],
+                **({"required": True} if c.required else {}),
+                **({"min_items": c.min_items} if c.min_items else {}),
                 **_never_with(c.id, cx),
             }
             for tier, c in _iter_skill_categories(m)

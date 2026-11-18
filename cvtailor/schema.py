@@ -62,9 +62,18 @@ class Link(_Strict):
     url: str
 
 
+class HeadlineAlt(_Strict):
+    """Another line under the name (e.g. "Analytics Engineer"); the selection may pick one."""
+    id: str
+    tags: list[str] = Field(default_factory=list)
+    en: str
+    pt: str
+
+
 class Profile(_Strict):
     name: str
     headline: Optional[Text] = None  # line under the name, e.g. the target role
+    headline_alts: list[HeadlineAlt] = Field(default_factory=list)
     email: str = ""
     phone: str = ""
     location: str = ""
@@ -136,6 +145,9 @@ class Project(_Strict):
     description: Optional[Text] = None  # context line shown above the bullets
     description_alts: list[DescriptionAlt] = Field(default_factory=list)
     bullets: list[Bullet] = Field(default_factory=list)  # selectable like job bullets
+    # When set, the selector only sees this project for job descriptions that mention
+    # at least one of these tags. A manual selection may still include it.
+    only_for_tags: list[str] = Field(default_factory=list)
 
     coerce_dates = field_validator("start", "end", mode="before")(_coerce_date)
 
@@ -166,6 +178,10 @@ class SkillCategory(_Strict):
     # Alternative groupings: never selected together with these categories. Skills may
     # repeat between a category and its alternatives.
     alt_of: list[str] = Field(default_factory=list)
+    # Must be listed whenever it can be, i.e. unless one of its alternatives is selected.
+    required: bool = False
+    # When listed, show at least this many of its items.
+    min_items: Optional[int] = None
 
     coerce_alt = field_validator("alt_of", mode="before")(_as_list)
 
@@ -239,12 +255,16 @@ class Selection(_Strict):
     # Skill category id -> the subset of its own items to show, in this order, each
     # given by its exact English text. Absent: every item, in master order.
     skill_items: dict[str, list[str]] = Field(default_factory=dict)
+    # Id of one of profile.headline_alts. Absent: the summary's or the profile's headline.
+    headline_id: Optional[str] = None
 
     @model_validator(mode="before")
     @classmethod
     def _nulls(cls, v: Any) -> Any:
         if isinstance(v, dict):
             v = dict(v)
+            if v.get("headline_id") in ("", "default"):
+                v["headline_id"] = None
             if v.get("project_ids") is None:
                 v["project_ids"] = []
             if v.get("skill_category_order") is None:

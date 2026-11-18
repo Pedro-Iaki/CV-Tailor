@@ -20,6 +20,10 @@ def validate_selection(sel: Selection, master: Master) -> list[str]:
     elif s.kind != "summary":
         errors.append(f"summary_id '{sel.summary_id}' is a {s.kind}, not a summary")
 
+    # headline
+    if sel.headline_id is not None and sel.headline_id not in {h.id for h in master.profile.headline_alts}:
+        errors.append(f"headline_id '{sel.headline_id}' is not a headline option in the master")
+
     # projects
     for pid in sel.project_ids:
         p = idx.get(pid)
@@ -103,6 +107,16 @@ def validate_selection(sel: Selection, master: Master) -> list[str]:
         for text, count in Counter(texts).items():
             if count > 1:
                 errors.append(f"skill_items: '{text}' appears {count} times in {cid}")
+        lo = c.obj.min_items
+        if lo and texts and len(set(texts)) < lo:
+            errors.append(f"skill_items: {cid} shows {len(set(texts))} items, below its min_items ({lo})")
+
+    # required categories: listed unless one of their alternatives is
+    conflicts_ = alt_conflicts(master)
+    for tier in TIERS:
+        for c in master.skills.tier(tier):
+            if c.required and c.id not in chosen_cats and not (conflicts_.get(c.id, set()) & chosen_cats):
+                errors.append(f"skill category '{c.id}' is required (unless one of its alternatives is chosen)")
 
     # 4. duplicates anywhere
     all_ids = [sel.summary_id]

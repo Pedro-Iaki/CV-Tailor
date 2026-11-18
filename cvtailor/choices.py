@@ -148,29 +148,33 @@ def build_index(m: Master, ch: Choices | None = None) -> str:
 MAX_RANK_BRANCHES = 64  # above this, count limits are left to validation
 
 
-def _ranks(keys: list[str], top: int, at_least_one: bool) -> dict[str, Any]:
+def _ranks(keys: list[str], top: int, at_least_one: bool, min_count: int = 0) -> dict[str, Any]:
     """An object giving every key a rank, 0 (left out) to `top`. Object keys can't
     repeat, so nothing can be listed twice.
 
-    Counts go into anyOf branches: with at_least_one, each branch requires one key to
-    be ranked; when there are more keys than `top`, each branch also forces enough
-    keys to 0 that at most `top` can be ranked. Branch counts are capped
-    (MAX_RANK_BRANCHES); beyond that the validator checks the counts."""
-    def obj(pick: str | None = None, zeros: tuple[str, ...] = ()) -> dict[str, Any]:
+    Counts go into anyOf branches: each branch requires a set of keys to be ranked
+    (one key with at_least_one, `min_count` keys when that is larger); when there are
+    more keys than `top`, each branch also forces enough keys to 0 that at most `top`
+    can be ranked. Branch counts are capped (MAX_RANK_BRANCHES); beyond that the
+    validator checks the counts."""
+    def obj(picks: tuple[str, ...] = (), zeros: tuple[str, ...] = ()) -> dict[str, Any]:
         def enum(k: str) -> list[int]:
-            return [0] if k in zeros else list(range(1 if k == pick else 0, top + 1))
+            return [0] if k in zeros else list(range(1 if k in picks else 0, top + 1))
         return {
             "type": "object",
             "properties": {k: {"type": "integer", "enum": enum(k)} for k in keys},
             "required": list(keys),
             "additionalProperties": False,
         }
+    need = min(max(min_count, 1 if at_least_one else 0), top, len(keys))
     need_zero = max(0, len(keys) - top)
     zero_sets = list(itertools.combinations(keys, need_zero)) if need_zero else [()]
-    picks = keys if at_least_one and top >= 1 else [None]
-    branches = [(p, z) for z in zero_sets for p in picks if p not in z]
+    pick_sets = list(itertools.combinations(keys, need)) if need else [()]
+    branches = [(p, z) for z in zero_sets for p in pick_sets if not set(p) & set(z)]
     if len(branches) > MAX_RANK_BRANCHES:  # too many shapes: keep only the minimum
-        branches = [(p, ()) for p in picks]
+        branches = [(p, ()) for p in pick_sets]
+        if len(branches) > MAX_RANK_BRANCHES:  # even that is too many: one key each
+            branches = [((k,), ()) for k in keys] if need else [((), ())]
     if len(branches) == 1:
         return obj(*branches[0])
     return {"anyOf": [obj(p, z) for p, z in branches]}
@@ -210,6 +214,8 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
         owners[owner] = _ranks(ids, top, at_least_one=p.get("minItems", 0) >= 1)
 
     new: dict[str, Any] = {"key_requirements": SCRATCHPAD, "summary_id": props.pop("summary_id")}
+    if "headline_id" in props:
+        new["headline_id"] = props.pop("headline_id")
     if ch.groups:
         new["bullet_versions"] = {
             "type": "object",
@@ -270,15 +276,16 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
                 ids = lay[t]
                 arr: dict[str, Any] = ({"type": "array", "items": {"type": "string", "enum": ids}}
                                        if ids else {"type": "array", "items": {"type": "string"}})
-                if count_limits:
-                    arr = {**arr, "minItems": 0, "maxItems": len(ids)}
+                if count_limits:  # required categories of this layout set the minimum
+                    arr = {**arr, "minItems": sum(1 for c in ids if cats[c].required), "maxItems": len(ids)}
                 tiers[t] = arr
             # Per category: a rank for each of its own items (exact English text), so
             # items can be dropped (0) or reordered but never repeated or moved.
             item_props = {}
             for cid in (c for t in TIERS for c in lay[t]):
                 own = [skill_item_text(x, "en") for x in cats[cid].items]
-                item_props[cid] = _ranks(own, len(own), at_least_one=False)
+                item_props[cid] = _ranks(own, len(own), at_least_one=False,
+                                         min_count=cats[cid].min_items or 0)
             branches.append({
                 "type": "object",
                 "properties": {"layout": {"type": "string", "enum": [layout_id(i)]}, **tiers,
@@ -387,7 +394,8 @@ _NEW_RULE = """\
   skills that only appear there, rather than leaving them out.
 - Under skills.items, every category of the chosen layout gives EACH of its skills a
   number the same way: 0 leaves it out, 1 puts it first, and so on, most relevant
-  to the job first. Keep at least one skill per category you list.
+  to the job first. Keep at least one skill per category you list, and at least
+  "min_items" where a category has it. A "required" category is always listed.
 """
 
 _OLD_INTRO = "Hard rules:\n"
