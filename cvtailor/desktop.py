@@ -103,8 +103,10 @@ class Job:
 
 class Api:
     def __init__(self, ctx_factory: Optional[Callable[[], Context]] = None) -> None:
-        self.jobs: dict[str, Job] = {}
-        self.window: Any = None  # set by main(); used for file dialogs
+        self._jobs: dict[str, Job] = {}
+        # Private on purpose: pywebview exposes every public attribute of js_api to the
+        # page and walks it on the UI thread; walking the Window object hangs the app.
+        self._window: Any = None  # set by main(); used for file dialogs
         self._factory = ctx_factory or (lambda: Context(Config.from_env()))
 
     # ------------------------------------------------------------ helpers
@@ -115,7 +117,7 @@ class Api:
 
     def _run(self, fn: Callable[[Job], Any]) -> str:
         job = Job()
-        self.jobs[job.id] = job
+        self._jobs[job.id] = job
 
         def go() -> None:
             try:
@@ -131,7 +133,7 @@ class Api:
         return job.id
 
     def job_status(self, job_id: str) -> dict:
-        job = self.jobs.get(job_id)
+        job = self._jobs.get(job_id)
         return job.view() if job else {"id": job_id, "done": True, "error": "unknown job"}
 
     # ------------------------------------------------------------ overview
@@ -308,7 +310,7 @@ class Api:
         """Copy master.yaml, worked examples, the database and variants from a folder the
         user picks (e.g. the old data/ folder). Existing files are kept as .bak."""
         import webview
-        picked = self.window.create_file_dialog(webview.FileDialog.FOLDER) if self.window else None
+        picked = self._window.create_file_dialog(webview.FileDialog.FOLDER) if self._window else None
         if not picked:
             return {"copied": []}
         src = Path(picked[0])
@@ -373,7 +375,7 @@ def main() -> None:
     api = Api()
     window = webview.create_window("CV Tailor", url=str(UI_DIR / "index.html"), js_api=api,
                                    width=1280, height=860, min_size=(900, 600))
-    api.window = window
+    api._window = window
     # WebView2 keeps its cache in Data/webview, not in the user profile.
     data, _, _ = default_dirs()
     webview.start(private_mode=False, storage_path=str(data / "webview"))
