@@ -365,15 +365,17 @@ function partialTexts(text, key){
 function liveHtml(v){
   const other = v.lang === 'en' ? 'pt' : 'en', a = partialTexts(v.live || '', v.lang), b = partialTexts(v.live || '', other);
   const n = Math.max(a.length, b.length);
-  if (!n) return '';
+  if (!n) return `<div class="vdraft"><div class="muted">Waiting for the model to start writing${v.t0 ? ` (${Math.round((Date.now() - v.t0) / 1000)} s)` : ''}…
+    It loads first if it isn't in memory, and waits its turn if another CV or a benchmark is using it. The drafts appear here as they are written.</div><span></span></div>`;
   return Array.from({length: n}, (_, i) => `<div class="vdraft"><div>${a[i] ? esc(a[i]) : `<span class="muted">${esc(b[i] || '')}</span>`}<span class="muted">▍</span></div><span class="tagl">writing…</span></div>`).join('');
 }
 async function generateVersions(){
-  keepVer(); const v = B.ver; v.busy = true; v.error = ''; v.status = 'Starting...'; v.live = ''; drawBuilder();
+  keepVer(); const v = B.ver; v.busy = true; v.error = ''; v.status = 'Starting...'; v.live = ''; v.t0 = Date.now(); drawBuilder();
   const j = await follow(await api('builder_draft_versions', v.id, v.note, v.drafts), j => {
     if (B.ver !== v) return;
     const st = $('verStatus'); if (st && j.lines.length) st.textContent = j.lines[j.lines.length - 1];
-    if (j.progress && j.progress.partial !== undefined) { v.live = j.progress.partial; const el = $('verLive'); if (el) el.innerHTML = liveHtml(v); }
+    if (j.progress && j.progress.partial !== undefined) v.live = j.progress.partial;
+    const el = $('verLive'); if (el) el.innerHTML = liveHtml(v);
   }, 300);
   if (B.ver !== v) return;  // closed meanwhile
   v.busy = false; v.status = ''; v.live = '';
