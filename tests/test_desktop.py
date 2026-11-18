@@ -207,3 +207,19 @@ def test_careful_reasoning_default_means_model_default(monkeypatch):
     assert config.Config.from_env().careful_reasoning == ""
     monkeypatch.delenv("CV_LLM_CAREFUL_REASONING")
     assert config.Config.from_env().careful_reasoning is None
+
+
+def test_quality_presets_per_run(make_ctx):
+    import dataclasses
+    from cvtailor.desktop import PRESETS, current_quality, with_quality
+    cfg = dataclasses.replace(make_ctx().cfg, llm_base_url="http://localhost:11434/v1", model="qwen3.5:35b-a3b")
+    t = with_quality(cfg, "thorough")
+    assert t.careful and t.model == ollama_setup.LONG_CONTEXT_MODEL and t.careful_reasoning == ""
+    assert t.llm_max_tokens == 10000 and t.embed_model == "bge-m3"
+    f = with_quality(t, "fast")
+    assert not f.careful and f.model == ollama_setup.MAIN_MODEL and f.careful_reasoning is None
+    assert with_quality(cfg, None) is cfg and with_quality(cfg, "nope") is cfg
+    anthropic = dataclasses.replace(cfg, llm_base_url=None)
+    assert with_quality(anthropic, "thorough") is anthropic
+    assert current_quality(dict(PRESETS["quality"]["careful"])) == "careful"
+    assert current_quality({"CV_MODEL": "something"}) == "custom"

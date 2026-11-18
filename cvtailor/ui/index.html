@@ -2,122 +2,164 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CV Tailor</title>
 <style>
-:root{--bg:#f5f4f0;--panel:#fff;--ink:#1d1d1b;--muted:#6d6c66;--line:#e2e0da;--accent:#c4451c;--accent-ink:#fff;--ok:#2f7d4f;--warn:#a86a00;--bad:#b3261e;--soft:#f0eee8}
-@media (prefers-color-scheme: dark){:root{--bg:#151514;--panel:#1e1e1c;--ink:#ebeae4;--muted:#9c9b92;--line:#34332f;--accent:#e8774f;--accent-ink:#1a0d07;--ok:#5fbf86;--warn:#e0a63c;--bad:#ef7b72;--soft:#262623}}
+:root{--bg:#f5f4f0;--panel:#fff;--ink:#1d1d1b;--muted:#6d6c66;--line:#e2e0da;--accent:#c4451c;--accent-ink:#fff;--ok:#2f7d4f;--warn:#a86a00;--bad:#b3261e;--soft:#f0eee8;--shadow:0 6px 24px rgba(0,0,0,.14)}
+@media (prefers-color-scheme: dark){:root{--bg:#151514;--panel:#1e1e1c;--ink:#ebeae4;--muted:#9c9b92;--line:#34332f;--accent:#e8774f;--accent-ink:#1a0d07;--ok:#5fbf86;--warn:#e0a63c;--bad:#ef7b72;--soft:#262623;--shadow:0 6px 24px rgba(0,0,0,.5)}}
 *{box-sizing:border-box}html,body{height:100%}
 body{margin:0;font:14px/1.45 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--ink);display:grid;grid-template-rows:auto 1fr}
 header{display:flex;align-items:center;gap:18px;padding:0 18px;background:var(--panel);border-bottom:1px solid var(--line)}
 header b{font-size:15px;letter-spacing:.2px}
 nav{display:flex;gap:2px}nav button{border:0;background:none;padding:14px 12px;color:var(--muted);border-bottom:2px solid transparent;border-radius:0}
-nav button.on{color:var(--ink);border-bottom-color:var(--accent)}
-header .status{margin-left:auto;font-size:12px;color:var(--muted)}
+nav button:hover{background:none;color:var(--ink)}nav button.on{color:var(--ink);border-bottom-color:var(--accent)}
+header .status{margin-left:auto;font-size:12px;color:var(--muted);border:0;background:none;padding:4px 6px}
+header .status:hover{color:var(--ink);background:none;text-decoration:underline}
 main{overflow:hidden}.tab{display:none;height:100%;overflow:auto;padding:18px}.tab.on{display:block}
 button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;padding:7px 12px;cursor:pointer}
 button:hover{background:var(--soft)}button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button.danger{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600}
 button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 textarea,input[type=text],input[type=password],input[type=number],select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:7px 9px}
 textarea{width:100%;min-height:220px;resize:vertical}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
 .card h3{margin:0 0 8px;font-size:14px}.muted{color:var(--muted)}.small{font-size:12px}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.grow{flex:1}
 .cols{display:grid;grid-template-columns:minmax(320px,1fr) minmax(0,1.3fr);gap:16px;height:100%}
-.log{font:12px/1.5 Consolas,monospace;white-space:pre-wrap;background:var(--soft);border-radius:8px;padding:10px;max-height:260px;overflow:auto}
+.log{font:12px/1.5 Consolas,monospace;white-space:pre-wrap;background:var(--soft);border-radius:8px;padding:10px;max-height:260px;overflow:auto;margin-top:6px}
 iframe{width:100%;height:100%;min-height:540px;border:1px solid var(--line);border-radius:8px;background:#fff}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line)}
-th{font-size:12px;color:var(--muted);font-weight:600}tr.sel td{background:var(--soft)}
+th{font-size:12px;color:var(--muted);font-weight:600}tr.sel td{background:var(--soft)}tbody tr[data-id]{cursor:pointer}tbody tr[data-id]:hover td{background:var(--soft)}
 .pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
 .bar{height:6px;background:var(--soft);border-radius:99px;overflow:hidden;width:220px}.bar i{display:block;height:100%;background:var(--accent);width:0}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+details>summary{cursor:pointer}details.opts .opts-grid{display:grid;gap:6px;padding:8px 0 2px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;flex:none}
+.seg button{border:0;border-radius:0;padding:3px 11px;font-size:12px}.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.seg.big button{padding:6px 16px;font-size:13px}
+.banner{border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:8px;padding:8px 10px;background:var(--panel);white-space:pre-wrap}
+/* toasts and dialogs */
+#toasts{position:fixed;right:16px;bottom:16px;display:grid;gap:8px;z-index:50;max-width:min(440px,calc(100vw - 32px))}
+.toast{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);padding:10px 14px;border-radius:8px;box-shadow:var(--shadow);white-space:pre-wrap;cursor:pointer;animation:pop .15s ease-out}
+.toast.ok{border-left-color:var(--ok)}.toast.bad{border-left-color:var(--bad)}
+@keyframes pop{from{transform:translateY(6px);opacity:0}}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;z-index:60}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;max-width:560px;width:calc(100% - 32px);box-shadow:var(--shadow)}
+.modal h3{margin:0 0 8px;font-size:15px}.modal p{margin:0 0 8px;white-space:pre-wrap;max-height:50vh;overflow:auto}
+/* applications */
+.side{display:flex;flex-direction:column;gap:8px;min-height:0;height:100%}
+.side iframe{flex:1;min-height:0}
+/* rate */
 .rate{display:grid;grid-template-columns:300px 1fr;gap:14px;height:100%}
 .rateside{display:flex;flex-direction:column;gap:10px;min-height:0;height:100%}
 .rateside .list{flex:1 1 0;min-height:120px}
 .notebox{display:flex;flex-direction:column;gap:6px;flex:0 0 auto}
-.notebox textarea{height:240px;min-height:120px;box-sizing:border-box}
+.notebox textarea{height:240px;min-height:120px}
 .list{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:auto}
 .item{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--line);cursor:pointer}
-.item:first-child{border-top:0}.item.on{background:var(--soft);box-shadow:inset 3px 0 var(--accent)}
+.item:hover{background:var(--soft)}.item:first-child{border-top:0}.item.on{background:var(--soft);box-shadow:inset 3px 0 var(--accent)}
 .item .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .stars button{width:38px;font-weight:600}.stars button.sel{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.panes{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px;height:calc(100% - 96px)}
+.rmain{display:flex;flex-direction:column;min-height:0;height:100%}
+.panes{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px;flex:1;min-height:0}
+.panes iframe{min-height:0}
 pre.job{margin:0;white-space:pre-wrap;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;font:13px/1.45 "Segoe UI",system-ui}
+/* settings */
 .field{display:grid;grid-template-columns:220px 1fr;gap:6px 14px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .field:first-child{border-top:0}.field input,.field select{width:100%}
+details.adv{margin-top:12px}details.adv summary{font-weight:600;padding:6px 0}
+.preset{display:grid;gap:6px}.preset label{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.preset label.on{border-color:var(--accent)}
+/* master builder */
 #tab-master{padding:12px 18px;overflow:hidden}
 .bcols{display:grid;grid-template-columns:minmax(400px,1fr) minmax(0,1.1fr);gap:16px;height:100%}
 .bleft{overflow:auto;height:100%;padding-right:6px}
 .bright{display:flex;flex-direction:column;gap:8px;min-height:0;height:100%}
 .bright iframe{flex:1;min-height:0}
 .bsec{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:12px}
-.bsec>h3{margin:0;padding:10px 12px;font-size:14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
-.bsec>h3 span{flex:1}
-.bent{padding:8px 12px 4px;border-top:1px solid var(--line)}.bent:first-of-type{border-top:0}
+.bsec>h3{margin:0;padding:10px 12px;font-size:14px;display:flex;gap:8px;align-items:center;cursor:pointer;user-select:none}
+.bsec>h3>span:first-child{flex:1}.bsec .caret{font-style:normal;color:var(--muted);display:inline-block;width:12px}
+.bsec.closed .bbody{display:none}.bbody{border-top:1px solid var(--line)}
+.bent{padding:8px 12px 4px;border-top:1px solid var(--line)}.bent:first-child{border-top:0}
 .bent>.head{display:flex;gap:8px;align-items:center;font-weight:600}.bent>.head .grow{flex:1}
-.bi{display:grid;grid-template-columns:22px 1fr auto;gap:6px 8px;padding:5px 0;align-items:start;border-top:1px dashed var(--line)}
+.bi{display:grid;grid-template-columns:22px 1fr auto;gap:6px 8px;padding:5px 0;align-items:start;border-top:1px dashed var(--line);position:relative}
 .bi:first-child{border-top:0}.bi input{margin-top:3px}
-.bi .acts{display:flex;gap:3px;opacity:.55}.bi:hover .acts{opacity:1}
+/* row actions float over the row's end on hover, so the text keeps the full width */
+.acts{display:flex;gap:3px;opacity:0;pointer-events:none;transition:opacity .1s;position:absolute;right:0;top:3px;background:var(--panel);padding:3px;border-radius:8px;box-shadow:var(--shadow)}
+.bent>.head{position:relative}
+.bi:hover>.acts,.bi:focus-within>.acts,.head:hover>.acts,.head:focus-within>.acts{opacity:1;pointer-events:auto}
 .acts button,.mini{padding:1px 7px;font-size:12px;border-radius:6px}
 .bi.ver{margin-left:18px}.bi.ver .txt{color:var(--muted)}
 .tagl{font-size:11px;color:var(--muted)}
 .badge{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:0 6px;margin-left:4px;color:var(--muted);white-space:nowrap}
 .chips{padding:2px 0 6px 30px}.chips label{display:inline-flex;gap:4px;align-items:center;margin:2px 10px 2px 0;font-size:12.5px}
-.bform{display:grid;gap:6px;padding:6px 0 8px}.bform textarea{min-height:64px}.bform input{width:100%}
+.bform{display:grid;gap:6px;padding:6px 0 8px}.bform textarea{min-height:72px}.bform input{width:100%}
 .vpanel{margin:4px 0 10px 30px;padding:8px 12px;border:1px solid var(--accent);border-radius:8px;display:grid;gap:8px}
 .vpanel textarea{min-height:52px}.vdrafts{display:grid;gap:0;max-height:420px;overflow:auto}
 .vdraft{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:7px 0;border-top:1px dashed var(--line)}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}.seg button{border:0;border-radius:0;padding:2px 10px;font-size:12px}
-.seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:600}.vdraft .warn{font-size:12px}
+.vdraft .warn{font-size:12px}
 .berr{color:var(--bad);font-size:12.5px;white-space:pre-wrap;max-height:120px;overflow:auto}
-details.adv{margin-top:12px}details.adv summary{cursor:pointer;font-weight:600;padding:6px 0}
-.preset{display:grid;gap:6px}.preset label{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
-.preset label.on{border-color:var(--accent)}
-@media (max-width:900px){.cols,.rate,.panes{grid-template-columns:1fr}.field{grid-template-columns:1fr}}
+.fit{font-size:12px;padding:4px 10px}.fit.ok{color:var(--ok);border-color:var(--ok)}.fit.over{color:var(--bad);border-color:var(--bad)}.fit.err{color:var(--warn)}
+@media (max-width:900px){.cols,.rate,.panes,.bcols{grid-template-columns:1fr}.field{grid-template-columns:1fr}}
 </style></head>
 <body>
 <header><b>CV Tailor</b>
 <nav id="nav"><button data-tab="new" class="on">New CV</button><button data-tab="apps">Applications</button><button data-tab="master">Master</button><button data-tab="rate">Rate</button><button data-tab="setup">Setup</button><button data-tab="settings">Settings</button></nav>
-<span class="status" id="status">Starting...</span></header>
+<button class="status" id="status" title="Open the Setup tab">Starting...</button></header>
 <main>
 
 <section class="tab on" id="tab-new"><div class="cols">
  <div>
   <div class="card"><h3>Job posting</h3>
-   <textarea id="jobText" placeholder="Paste the job description here (a URL on the first line is kept as the posting's link)."></textarea>
+   <textarea id="jobText" placeholder="Paste the job description here. A URL on the first line is kept as the posting's link."></textarea>
    <div class="row" style="margin-top:10px">
     <button id="pasteBtn">Paste from clipboard</button>
-    <label>Language <select id="lang"><option value="">From the posting</option><option value="en">English</option><option value="pt">Portuguese</option></select></label>
+    <label class="small">Language <select id="lang"><option value="">From the posting</option><option value="en">English</option><option value="pt">Portuguese</option></select></label>
    </div>
-   <div class="row" style="margin-top:10px">
-    <label><input type="checkbox" id="careful"> Careful mode (slower, better)</label>
-    <label><input type="checkbox" id="dryRun"> Dry run (select only, save nothing)</label>
-    <label><input type="checkbox" id="allowDup"> Allow duplicate posting</label>
-    <label><input type="checkbox" id="forceGen"> Always generate (skip saved variants)</label>
-   </div>
-   <div class="row" style="margin-top:12px"><button class="primary" id="tailorBtn">Tailor CV</button><span class="muted small" id="runInfo"></span></div>
+   <div class="row" style="margin-top:12px" id="qualityRow"><b class="small">Quality</b><span class="seg big" id="quality"></span></div>
+   <div class="muted small" id="qualityInfo" style="margin-top:4px"></div>
+   <label class="row small" id="carefulRow" style="display:none;margin-top:10px"><input type="checkbox" id="careful"> Careful mode: analyse, select, then review once (slower, better)</label>
+   <details class="opts" style="margin-top:10px"><summary class="small">More options</summary>
+    <div class="opts-grid small">
+     <label><input type="checkbox" id="dryRun"> Dry run: only select, and show the result in the details; nothing is saved</label>
+     <label><input type="checkbox" id="allowDup"> Allow a posting I already used</label>
+     <label><input type="checkbox" id="forceGen"> Always run the model (don't reuse a saved variant)</label>
+    </div></details>
+   <div class="row" style="margin-top:14px"><button class="primary" id="tailorBtn">Tailor CV</button><span class="muted small">or Ctrl+Enter in the posting</span></div>
   </div>
-  <div class="card"><h3>Progress</h3><div class="log" id="log">Nothing running.</div></div>
-  <div class="card" id="resultCard" style="display:none"><h3>Result</h3><div id="result"></div></div>
+  <div class="card" id="progressCard" style="display:none">
+   <div class="row"><span class="spin" id="spin"></span><b class="grow" id="progLine">Starting...</b><span class="muted small" id="elapsed"></span></div>
+   <details><summary class="small muted">Details</summary><div class="log" id="log"></div></details>
+  </div>
+  <div class="card" id="resultCard" style="display:none"><div id="result"></div></div>
  </div>
  <div><iframe id="newPreview" title="CV preview"></iframe></div>
 </div></section>
 
 <section class="tab" id="tab-apps"><div class="cols">
- <div class="card" style="overflow:auto"><div class="row" style="margin-bottom:8px"><h3 class="grow" style="margin:0">Applications</h3><button id="refreshApps">Refresh</button><button onclick="api('open_folder','output')">Open PDF folder</button></div>
+ <div class="card" style="overflow:auto;margin:0">
+  <div class="row" style="margin-bottom:8px"><h3 class="grow" style="margin:0">Applications</h3><button onclick="api('open_folder','output')">Open PDF folder</button></div>
+  <div class="row" style="margin-bottom:8px"><input type="text" id="appFilter" class="grow" placeholder="Filter by company or role"><select id="appStatusFilter"></select></div>
   <table><thead><tr><th>#</th><th>Date</th><th>Company / role</th><th>Lang</th><th>Status</th></tr></thead><tbody id="appRows"></tbody></table></div>
- <div><div class="row" style="margin-bottom:8px" id="appActions"><span class="muted">Select an application.</span></div><iframe id="appPreview" title="CV preview"></iframe></div>
+ <div class="side"><div class="row" id="appActions"><span class="muted">Select an application on the left.</span></div><iframe id="appPreview" title="CV preview"></iframe></div>
 </div></section>
 
 <section class="tab" id="tab-master"><div class="bcols">
  <div class="bleft" id="bLeft"><p class="muted">Loading the master...</p></div>
  <div class="bright">
   <div class="row">
-   <button id="bLang" title="Language of the texts and the preview">EN / PT</button>
+   <span class="seg" id="bLang" title="Language of the texts and the preview"></span>
    <select id="bLoad" title="Start the ticks from an application's CV"></select>
-   <button id="bFit">Check page fit</button>
-   <button id="bPdf">Save PDF</button>
-   <button id="bToApp" style="display:none"></button>
+   <button id="bFit" class="fit" title="The real PDF is rendered to count the pages. Click to check again.">Page fit</button>
+   <span class="grow"></span>
    <button id="bUndo" title="Undo the last change to master.yaml">Undo</button>
   </div>
-  <div class="muted small" id="bInfo">Ticks choose what goes on this CV (nothing is saved until you press a button). Edit, ↑ ↓, ✕ and + change master.yaml itself; each change is validated first and can be undone.</div>
+  <div class="row">
+   <button id="bPdf">Save PDF...</button>
+   <button id="bToApp" style="display:none"></button>
+   <span class="muted small grow">Ticks build this CV; nothing is saved until you save it. Edit, ↑ ↓, ✕ and + change master.yaml (checked first, with Undo).</span>
+  </div>
   <div class="berr" id="bErr"></div>
   <iframe id="bPreview" title="CV preview"></iframe>
  </div>
@@ -125,15 +167,16 @@ details.adv{margin-top:12px}details.adv summary{cursor:pointer;font-weight:600;p
 
 <section class="tab" id="tab-rate"><div class="rate">
  <div class="rateside">
-  <div class="row"><b class="grow">CVs</b><button id="rateSummary" title="Mean rating per setup">Summary</button></div>
+  <div class="row"><b class="grow">CVs</b><span class="muted small" id="rateProgress"></span><button id="rateSummary" title="Mean rating per setup">Summary</button></div>
+  <div class="banner small" id="rateProblems" style="display:none"></div>
   <div class="list" id="rateList"></div>
-  <div class="notebox"><label for="rateNote"><b>Note</b> <span class="muted small">(optional; saved with the rating, and as you type once a CV is rated)</span></label>
+  <div class="notebox"><div class="row"><label for="rateNote" class="grow"><b>Note</b> <span class="muted small">optional</span></label><span class="small muted" id="noteState"></span></div>
    <textarea id="rateNote" placeholder="What works, what is wrong, what is missing..."></textarea></div>
  </div>
- <div>
+ <div class="rmain">
   <div class="card" style="margin-bottom:12px"><div class="row"><b class="grow" id="rateTitle">Rate CVs 1 to 5</b>
-   <button id="rateLang">EN / PT</button><span class="stars" id="stars"></span></div>
-   <div class="muted small" id="rateLabel">Keys: 1-5 rate and move on, L switches language. The setup behind a CV shows after you rate it. Extra CVs: put .jsonl files in Data/candidates.</div></div>
+   <span class="seg" id="rateLang"></span><span class="stars" id="stars"></span></div>
+   <div class="muted small" id="rateLabel">Keys: 1-5 rate and move on, L switches language. The setup behind a CV shows after you rate it.</div></div>
   <div class="panes" id="ratePanes"><iframe id="rateCv" title="CV"></iframe><pre class="job" id="rateJob"></pre></div>
   <div class="card" id="rateSummaryCard" style="display:none"></div>
  </div>
@@ -144,6 +187,7 @@ details.adv{margin-top:12px}details.adv summary{cursor:pointer;font-weight:600;p
 <section class="tab" id="tab-settings"><div class="card"><div class="row"><h3 class="grow" style="margin:0">Settings</h3><span class="muted small" id="settingsFile"></span></div>
  <div id="settingsForm"></div><div class="row" style="margin-top:12px"><button class="primary" id="saveSettings">Save</button><span class="muted small" id="settingsMsg"></span></div></div></section>
 </main>
+<div id="toasts" aria-live="polite"></div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -151,14 +195,62 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 async function api(name, ...args){ return await window.pywebview.api[name](...args); }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function follow(jobId, onTick, ms = 700){ for(;;){ const j = await api('job_status', jobId); onTick && onTick(j); if (j.done) return j; await sleep(ms); } }
+const fmtSecs = ms => { const s = Math.round(ms / 1000); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; };
 let state = null;
 
+// ---------------------------------------------------------------- feedback
+// Toasts for results, an in-page dialog for questions (instead of alert/confirm/prompt).
+function toast(msg, kind = '', ms = 3500){
+  const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = msg; t.title = 'Click to close';
+  t.onclick = () => t.remove(); $('toasts').appendChild(t); if (ms) setTimeout(() => t.remove(), kind === 'bad' ? ms * 2 : ms);
+}
+function modal({title, body = '', ok = 'OK', cancel = 'Cancel', danger = false, input = null, label = ''}){
+  return new Promise(res => {
+    const bg = document.createElement('div'); bg.className = 'modal-bg';
+    bg.innerHTML = `<div class="modal" role="dialog" aria-modal="true"><h3>${esc(title)}</h3>${body ? `<p>${esc(body)}</p>` : ''}
+      ${input !== null ? `<label class="small">${esc(label)}<input type="text" class="minput" style="width:100%" value="${esc(input)}"></label>` : ''}
+      <div class="row" style="justify-content:flex-end;margin-top:14px">${cancel ? `<button data-r="0">${esc(cancel)}</button>` : ''}
+      <button data-r="1" class="${danger ? 'danger' : 'primary'}">${esc(ok)}</button></div></div>`;
+    const no = input !== null ? null : false, yes = () => input !== null ? bg.querySelector('.minput').value : true;
+    const done = v => { bg.remove(); document.removeEventListener('keydown', key, true); res(v); };
+    const key = e => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(no); }
+      else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(e.target.dataset?.r === '0' ? no : yes()); }
+      else e.stopPropagation();
+    };
+    bg.addEventListener('click', e => { if (e.target === bg) done(no); const b = e.target.closest('[data-r]'); if (b) done(b.dataset.r === '1' ? yes() : no); });
+    document.addEventListener('keydown', key, true); document.body.appendChild(bg);
+    const f = bg.querySelector('.minput') || bg.querySelector('[data-r="1"]'); f.focus(); if (f.select) f.select();
+  });
+}
+const ask = (title, body = '', ok = 'OK', danger = false) => modal({title, body, ok, danger});
+const tell = (title, body = '') => modal({title, body, cancel: ''});
+function placeholder(frame, text){
+  frame.srcdoc = `<body style="margin:0;height:100vh;display:grid;place-items:center;font:14px 'Segoe UI',sans-serif;color:#8a8984;background:#fff;text-align:center;padding:0 24px">${esc(text)}</body>`;
+}
+function seg(el, cur, onPick, opts = [['en', 'EN'], ['pt', 'PT']]){
+  el.innerHTML = opts.map(([v, l]) => `<button data-v="${v}" class="${v === cur ? 'on' : ''}">${l}</button>`).join('');
+  el.onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled && b.dataset.v !== cur) onPick(b.dataset.v); };
+}
+
 // ---------------------------------------------------------------- tabs
-document.querySelectorAll('#nav button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('on', x === b));
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
-  ({apps: loadApps, master: loadBuilder, rate: loadRate, setup: loadSetup, settings: loadSettings})[b.dataset.tab]?.();
-});
+let curTab = 'new';
+const loaders = {apps: () => loadApps(), master: () => loadBuilder(), rate: () => loadRate(), setup: () => loadSetup(), settings: () => loadSettings()};
+const leaveGuards = {settings: async () => {
+  if (!SET?.dirty) return true;
+  if (!await ask('Leave Settings without saving?', 'Your changes on this tab are not saved.', 'Leave without saving', true)) return false;
+  SET.dirty = false; return true;
+}};
+async function showTab(name){
+  if (name !== curTab && leaveGuards[curTab] && !await leaveGuards[curTab]()) return false;
+  curTab = name;
+  document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === name));
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + name));
+  await loaders[name]?.();
+  return true;
+}
+document.querySelectorAll('#nav button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+$('status').onclick = () => showTab('setup');
 
 async function refreshState(){
   state = await api('get_state');
@@ -167,78 +259,151 @@ async function refreshState(){
   if (state.local) s += o && o.running ? ' · Ollama running' : ' · Ollama not running';
   if (!state.master_ok) s += ' · master.yaml has problems';
   $('status').textContent = s;
-  $('careful').checked = !!state.careful_default;
+  $('status').classList.toggle('bad', (state.local && !(o && o.running)) || !state.master_ok);
+  drawQuality();
   return state;
 }
 
 // ---------------------------------------------------------------- new CV
-$('pasteBtn').onclick = async () => { const t = await api('read_clipboard'); if (t) $('jobText').value = t; };
-$('tailorBtn').onclick = async () => {
-  const text = $('jobText').value.trim();
-  if (!text) { $('runInfo').textContent = 'Paste a job description first.'; return; }
-  $('tailorBtn').disabled = true; $('resultCard').style.display = 'none'; $('log').textContent = '';
-  const t0 = Date.now();
-  const id = await api('new_cv', text, {lang: $('lang').value, careful: $('careful').checked, dry_run: $('dryRun').checked,
-                                       allow_duplicate: $('allowDup').checked, force_generate: $('forceGen').checked});
-  const job = await follow(id, j => { $('log').textContent = j.lines.join('\n') || 'Working...'; $('log').scrollTop = 1e9;
-                                       $('runInfo').textContent = `Running ${Math.round((Date.now()-t0)/1000)} s`; });
-  $('tailorBtn').disabled = false; $('runInfo').textContent = `Finished in ${Math.round((Date.now()-t0)/1000)} s`;
-  showResult(job);
+const QUALITY = [['fast', 'Fast'], ['careful', 'Careful'], ['thorough', 'Thorough']];
+let quality;  // undefined: not chosen yet (use the Settings preset); null: "as in Settings"
+function drawQuality(){
+  const s = state; if (!s) return;
+  $('qualityRow').style.display = $('qualityInfo').style.display = s.local ? '' : 'none';
+  $('carefulRow').style.display = s.local ? 'none' : '';
+  if (!s.local) { if (!drawQuality.init) $('careful').checked = !!s.careful_default; drawQuality.init = true; return; }
+  if (quality === undefined) quality = QUALITY.some(q => q[0] === s.quality) ? s.quality : null;
+  const models = s.ollama?.models || [], have = n => models.some(x => x === n || x === n + ':latest');
+  const noLong = s.ollama?.running && !have(s.long_context_model);
+  const opts = (s.quality === 'custom' ? [['', 'As in Settings']] : []).concat(QUALITY);
+  $('quality').innerHTML = opts.map(([v, l]) => `<button data-v="${v}" class="${(quality || '') === v ? 'on' : ''}"
+    ${v === 'thorough' && noLong ? 'disabled title="Needs the 16k-context model: Setup tab, Create it"' : ''}>${l}</button>`).join('');
+  $('qualityInfo').textContent = (quality ? s.preset_info[quality] : 'Your own combination from Settings, Advanced.') +
+    (quality && quality === s.quality ? ' (your default)' : '');
+}
+$('quality').onclick = e => { const b = e.target.closest('button'); if (!b || b.disabled) return; quality = b.dataset.v || null; drawQuality(); };
+
+$('pasteBtn').onclick = async () => {
+  const t = await api('read_clipboard');
+  if (!t.trim()) { toast('The clipboard has no text.', 'bad'); return; }
+  $('jobText').value = t; toast(`Pasted ${t.trim().split(/\s+/).length} words.`);
 };
+$('jobText').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); tailor(); } });
+$('tailorBtn').onclick = () => tailor();
+let running = false;
+async function tailor(allowDup = false){
+  const text = $('jobText').value.trim();
+  if (!text) { toast('Paste a job description first.', 'bad'); $('jobText').focus(); return; }
+  if (running) return; running = true;
+  $('tailorBtn').disabled = true; $('resultCard').style.display = 'none';
+  $('progressCard').style.display = ''; $('spin').style.display = ''; $('progLine').textContent = 'Starting...'; $('log').textContent = '';
+  const t0 = Date.now(), tick = setInterval(() => $('elapsed').textContent = fmtSecs(Date.now() - t0), 1000);
+  $('elapsed').textContent = '0 s';
+  const opts = {lang: $('lang').value, dry_run: $('dryRun').checked, allow_duplicate: allowDup || $('allowDup').checked,
+                force_generate: $('forceGen').checked};
+  if (state?.local) { if (quality) opts.quality = quality; } else opts.careful = $('careful').checked;
+  let job;
+  try {
+    job = await follow(await api('new_cv', text, opts), j => {
+      const lines = j.lines.filter(l => l.trim());
+      $('log').textContent = lines.join('\n'); $('log').scrollTop = 1e9;
+      if (lines.length) { const l = lines[lines.length - 1].trim(); $('progLine').textContent = l.length > 110 ? l.slice(0, 110) + '...' : l; }
+    });
+  } catch (err) { job = {error: String(err), lines: []};
+  } finally { clearInterval(tick); running = false; $('tailorBtn').disabled = false; $('spin').style.display = 'none'; $('elapsed').textContent = ''; }
+  $('progLine').textContent = job.error ? 'Stopped.' : `Done in ${fmtSecs(Date.now() - t0)}.`;
+  showResult(job);
+}
 async function showResult(job){
   $('resultCard').style.display = '';
-  if (job.error) { $('result').innerHTML = `<p class="bad">${esc(job.error)}</p>`; return; }
+  if (job.error) {
+    const dup = job.error.match(/(?:duplicate of|same company\+role as) #(\d+)/);
+    if (dup) {
+      $('result').innerHTML = `<h3>Already applied?</h3><p>${job.error.startsWith('duplicate')
+        ? `This posting was already used for application #${dup[1]}.` : `You applied to the same company and role recently (#${dup[1]}).`}</p>
+        <div class="row"><button onclick="showApp(${dup[1]})">Show #${dup[1]}</button><button class="primary" onclick="tailor(true)">Tailor anyway</button></div>`;
+    } else $('result').innerHTML = `<h3 class="bad">The CV could not be made</h3><p style="white-space:pre-wrap">${esc(job.error)}</p><p class="small muted">Open Details above to see each step.</p>`;
+    return;
+  }
   const r = job.result;
-  let h = `<p><b>${esc(r.company)}</b> · ${esc(r.role)} · ${esc(r.lang.toUpperCase())} · route: ${esc(r.route)}</p>`;
-  if (r.trimmed?.length) h += `<p class="small muted">Trimmed to fit one page: ${esc(r.trimmed.join(', '))}</p>`;
+  let h = `<h3>${esc(r.company)} · ${esc(r.role)}</h3><p class="small muted">${esc(r.lang.toUpperCase())} · ${r.route === 'reused' ? 'reused a saved variant' : 'selected by the model'}${r.app_id ? ` · saved as application #${r.app_id}` : ''}</p>`;
+  if (r.trimmed?.length) h += `<p class="small">Trimmed to fit one page: ${esc(r.trimmed.join(', '))}</p>`;
   if (r.unmatched?.length) h += `<p class="small"><b>Not covered by your master:</b> ${esc(r.unmatched.join('; '))}</p>`;
   if (r.suggestions?.length) h += `<p class="small"><b>Suggestions:</b> ${esc(r.suggestions.join(' | '))}</p>`;
   if (r.app_id) {
+    const other = r.lang === 'en' ? 'pt' : 'en';
     h += `<div class="row"><button class="primary" onclick="openPdf(${r.app_id}, '${r.lang}')">Open PDF</button>
-          <button onclick="openPdf(${r.app_id}, '${r.lang === 'en' ? 'pt' : 'en'}')">Make ${r.lang === 'en' ? 'PT' : 'EN'} version</button>
-          <span class="muted small">Saved as application #${r.app_id}</span></div>`;
+          <button onclick="openPdf(${r.app_id}, '${other}')">Make the ${other.toUpperCase()} PDF</button>
+          <button onclick="openInBuilder(${r.app_id})" title="Tick and untick items by hand in the Master tab">Edit by hand</button></div>`;
     $('newPreview').srcdoc = await api('preview', r.app_id, r.lang);
-  } else { h += '<p class="muted small">Dry run: nothing was saved. The selection is in the progress log.</p>'; }
+  } else h += '<p class="muted small">Dry run: nothing was saved. The selection is in Details above.</p>';
   $('result').innerHTML = h;
 }
-async function openPdf(id, lang){ const j = await follow(await api('open_pdf', id, lang)); if (j.error) alert(j.error); }
+async function openPdf(id, lang){
+  toast('Opening the PDF...', '', 2000);
+  const j = await follow(await api('open_pdf', id, lang)); if (j.error) tell('The PDF could not be opened', j.error);
+}
 
 // ---------------------------------------------------------------- applications
 const STATUSES = ['applied','screen','interview','offer','rejected','ghosted','discarded'];
-let selApp = null;
-$('refreshApps').onclick = loadApps;
+let appCache = [], selApp = null, appLang = null;
+$('appStatusFilter').innerHTML = '<option value="">All statuses</option>' + STATUSES.map(s => `<option>${s}</option>`).join('');
+$('appFilter').oninput = drawApps; $('appStatusFilter').onchange = drawApps;
 async function loadApps(){
-  const rows = await api('list_apps');
+  appCache = await api('list_apps'); drawApps();
+  if (!selApp) placeholder($('appPreview'), appCache.length ? 'Select an application to see its CV.' : 'No applications yet.');
+}
+function drawApps(){
+  const q = $('appFilter').value.trim().toLowerCase(), st = $('appStatusFilter').value;
+  const rows = appCache.filter(r => (!q || `${r.company} ${r.role}`.toLowerCase().includes(q)) && (!st || r.status === st));
   $('appRows').innerHTML = rows.map(r => `<tr data-id="${r.id}" class="${r.id === selApp?.id ? 'sel' : ''}"><td>${r.id}</td><td>${r.date}</td>
     <td>${esc(r.company)}<br><span class="muted small">${esc(r.role)}</span></td><td>${r.lang.toUpperCase()}</td>
     <td><select data-status="${r.id}">${STATUSES.map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}</select></td></tr>`).join('')
-    || '<tr><td colspan="5" class="muted">No applications yet.</td></tr>';
-  document.querySelectorAll('#appRows tr[data-id]').forEach(tr => tr.onclick = e => { if (e.target.tagName !== 'SELECT') selectApp(rows.find(r => r.id == tr.dataset.id)); });
-  document.querySelectorAll('select[data-status]').forEach(s => s.onchange = async () => { await api('set_status', +s.dataset.status, s.value); });
+    || `<tr><td colspan="5" class="muted">${appCache.length ? 'No application matches the filter.' : 'No applications yet. Tailor one on the New CV tab.'}</td></tr>`;
 }
+$('appRows').addEventListener('click', e => { const tr = e.target.closest('tr[data-id]'); if (tr && e.target.tagName !== 'SELECT' && e.target.tagName !== 'OPTION') selectApp(appCache.find(r => r.id == tr.dataset.id)); });
+$('appRows').addEventListener('change', async e => {
+  const s = e.target.closest('select[data-status]'); if (!s) return;
+  await api('set_status', +s.dataset.status, s.value);
+  const r = appCache.find(x => x.id == s.dataset.status); if (r) r.status = s.value;
+  toast(`#${s.dataset.status} is now "${s.value}".`, 'ok');
+});
 async function selectApp(r, lang){
-  selApp = r; lang = lang || r.lang; loadApps();
-  $('appActions').innerHTML = `<b class="grow">#${r.id} ${esc(r.company)}</b>
-    <button onclick="selectApp(selApp, '${lang === 'en' ? 'pt' : 'en'}')">Show ${lang === 'en' ? 'PT' : 'EN'}</button>
-    <button class="primary" onclick="openPdf(${r.id}, '${lang}')">Open PDF (${lang.toUpperCase()})</button>
-    <button onclick="regenApp(${r.id})">Re-run selection</button>`;
-  $('appPreview').srcdoc = await api('preview', r.id, lang);
+  if (!r) return;
+  appLang = lang || (selApp?.id === r.id && appLang ? appLang : r.lang); selApp = r; drawApps();
+  $('appActions').innerHTML = `<b class="grow">#${r.id} ${esc(r.company)} <span class="muted small" style="font-weight:400">${esc(r.role)}</span></b>
+    <span class="seg" id="appLang"></span>
+    <button class="primary" onclick="openPdf(${r.id}, appLang)">Open PDF</button>
+    <button onclick="openInBuilder(${r.id})" title="Tick and untick items by hand in the Master tab">Edit by hand</button>
+    <button onclick="regenApp(${r.id})" title="Run the model's selection again">Re-run</button>`;
+  seg($('appLang'), appLang, l => selectApp(selApp, l));
+  $('appPreview').srcdoc = await api('preview', r.id, appLang);
 }
+async function openInBuilder(id){ B.pendingApp = id; await showTab('master'); }
+async function showApp(id){ if (!await showTab('apps')) return; selectApp(appCache.find(r => r.id == id)); }
 async function regenApp(id){
-  if (!confirm('Run the selection again for this application? Its stored CV and PDF are replaced.')) return;
-  const j = await follow(await api('regen_app', id)); if (j.error) alert(j.error); else selectApp(selApp);
+  if (!await ask(`Re-run the selection for #${id}?`, 'The model selects again from your current master. The stored CV and PDF are replaced.', 'Re-run')) return;
+  placeholder($('appPreview'), 'Running the selection again. This takes as long as a new CV...');
+  const j = await follow(await api('regen_app', id));
+  if (j.error) tell('Re-run failed', j.error); else toast(`#${id} was selected again.`, 'ok');
+  selectApp(selApp);
 }
 
 // ---------------------------------------------------------------- master builder
 // B.sel is a selection in the same shape the pipeline stores. Ticks change only B.sel;
 // the edit buttons change master.yaml through builder_edit (validated, undoable).
 const TIER_NAMES = {hands_on: 'Hands-on', working: 'Working knowledge', familiar: 'Familiar with', languages: 'Languages'};
-const B = {m: null, cx: {}, sel: null, lang: 'en', app: null, editing: null, timer: null, apps: [], ver: null, allowGen: false};
+const LANG_NAME = {en: 'English', pt: 'Portuguese'};
+const B = {m: null, cx: {}, sel: null, lang: 'en', app: null, editing: null, timer: null, apps: [], ver: null, allowGen: false,
+           form: null, selDirty: false, pendingApp: null, fitTimer: null, fitSeq: 0, closed: new Set()};
+try { B.closed = new Set(JSON.parse(localStorage.getItem('bClosed') || '[]')); } catch (e) {}
 const T = x => x == null ? '' : typeof x === 'string' ? x : (x[B.lang] || x.en || '');
 const EN = x => typeof x === 'string' ? x : x.en;
 const owners = () => [...B.m.jobs, ...B.m.projects, ...B.m.education];
 const findOwner = id => owners().find(o => o.id === id);
+const findItem = id => [...B.m.summaries, ...(B.m.profile.headline_alts || []), ...owners().flatMap(o => [...o.bullets, ...(o.description_alts || [])])].find(x => x.id === id);
 const allCats = () => Object.keys(TIER_NAMES).flatMap(t => (B.m.skills[t] || []).map(c => ({...c, tier: t})));
+const DESC = '#description';
 
 function defaultSel(){
   const m = B.m, lim = m.limits, first = bs => bs.filter(b => !(b.alt_of || []).length);
@@ -280,8 +445,12 @@ function inMasterOrder(list, ids){ const pos = new Map(list.map((x, i) => [x, i]
 
 async function loadBuilder(){
   const st = await api('builder_state');
-  if (st.error) { $('bLeft').innerHTML = `<p class="bad" style="white-space:pre-wrap">${esc(st.error)}</p>`; return; }
+  if (st.error) { $('bLeft').innerHTML = `<div class="banner bad">master.yaml has problems:\n${esc(st.error)}</div>`; return; }
   applyState(st);
+  if (B.pendingApp) {
+    const id = B.pendingApp; B.pendingApp = null;
+    if (!B.sel || !B.selDirty || await ask(`Replace your ticks with #${id}?`, 'Your current ticks in the Master tab will be replaced.', 'Replace')) await loadFromApp(id);
+  }
   if (!B.sel) {
     B.sel = defaultSel();
     if (st.apps.length) await loadFromApp(st.apps[0].id);  // start from the newest application
@@ -290,34 +459,79 @@ async function loadBuilder(){
 }
 function applyState(st){
   B.m = st.master; B.cx = st.conflicts; B.apps = st.apps; B.allowGen = !!st.allow_generation;
-  $('bUndo').textContent = `Undo (${st.undo})`; $('bUndo').disabled = !st.undo;
-  $('bLoad').innerHTML = `<option value="">Start from: defaults</option>` + st.apps.map(a => `<option value="${a.id}" ${B.app?.id === a.id ? 'selected' : ''}>Start from: #${a.id} ${esc(a.company)}</option>`).join('');
+  $('bUndo').textContent = st.undo ? `Undo (${st.undo})` : 'Undo'; $('bUndo').disabled = !st.undo;
   if (B.sel) normalizeSel();
+  drawLoad();
+}
+function drawLoad(){
+  $('bLoad').innerHTML = `<option value="">Start from: defaults</option>` + B.apps.map(a => `<option value="${a.id}">Start from: #${a.id} ${esc(a.company)}</option>`).join('');
+  $('bLoad').value = B.app ? String(B.app.id) : '';
 }
 async function loadFromApp(id){
   if (!id) { B.app = null; B.sel = defaultSel(); }
   else { const a = await api('builder_from_app', +id); B.app = a; B.sel = JSON.parse(JSON.stringify(a.selection)); B.lang = a.lang;
          B.sel.descriptions = B.sel.descriptions || {}; B.sel.skill_items = B.sel.skill_items || {}; B.sel.headline_id = B.sel.headline_id || null; normalizeSel(); }
+  B.selDirty = false;
   $('bToApp').style.display = B.app ? '' : 'none'; if (B.app) $('bToApp').textContent = `Save to #${B.app.id}`;
-  $('bLoad').value = B.app ? String(B.app.id) : '';
+  drawLoad();
+}
+
+// ---- forms: one text box with an EN | PT switch; both texts are kept while switching
+function startForm(key, en, pt, tags){
+  B.editing = key;
+  B.form = {key, lang: B.lang, en: en || '', pt: pt || '', tags: tags ?? null, orig: {en: en || '', pt: pt || '', tags: tags ?? null}};
+}
+function keepForm(){
+  const f = B.form, el = f && document.querySelector(`[data-form="${CSS.escape(f.key)}"]`); if (!el) return;
+  el.querySelectorAll('[data-ff]').forEach(e => f[e.dataset.ff === 'text' ? e.dataset.l : e.dataset.ff] = e.value);
+}
+function keepVer(){
+  const f = B.ver && document.querySelector('[data-form="ver"]'); if (!f) return;
+  f.querySelectorAll('[data-v]').forEach(e => B.ver[e.dataset.v === 'text' ? e.dataset.l : e.dataset.v] = e.value);
+}
+const langToggle = (act, cur) => `<span class="seg">${['en', 'pt'].map(l => `<button data-act="${act}" data-l="${l}" class="${cur === l ? 'on' : ''}">${l.toUpperCase()}</button>`).join('')}</span>`;
+function staleNote(f){  // one language changed (or written) and the other not
+  const other = f.lang === 'en' ? 'pt' : 'en', changed = l => f[l].trim() !== f.orig[l].trim();
+  if (changed('en') === changed('pt')) return '';
+  const stale = changed('en') ? 'pt' : 'en', empty = !f[stale].trim();
+  const what = empty ? `The ${LANG_NAME[stale]} text is empty.` : `The ${LANG_NAME[stale]} text still matches the original.`;
+  return `<div class="warn small">${stale === f.lang ? `${what} The ${LANG_NAME[other]} was changed.` : `${what} Switch to ${stale.toUpperCase()} to update it.`}</div>`;
+}
+function textForm(saveAct = 'save', title = ''){
+  const f = B.form;
+  return `<div class="bform" data-form="${esc(f.key)}">
+    <div class="row"><b class="small grow">${esc(title)}</b>${langToggle('formlang', f.lang)}</div>
+    <textarea data-ff="text" data-l="${f.lang}" placeholder="${LANG_NAME[f.lang]} text">${esc(f[f.lang])}</textarea>${staleNote(f)}
+    ${f.tags !== null ? `<label class="small">Tags (comma separated)<input type="text" data-ff="tags" value="${esc(f.tags)}"></label>` : ''}
+    <div class="row"><button class="primary mini" data-act="${saveAct}" data-id="${esc(f.key)}">Save</button><button class="mini" data-act="cancel">Cancel</button>
+      <span class="muted small">Ctrl+Enter saves, Esc cancels</span></div></div>`;
+}
+function formDirty(){
+  keepForm(); keepVer();
+  const f = B.form, v = B.ver;
+  if (f && (f.en !== f.orig.en || f.pt !== f.orig.pt || (f.tags ?? '') !== (f.orig.tags ?? ''))) return true;
+  if (v && (v.en !== v.orig.en || v.pt !== v.orig.pt || v.note.trim() || v.drafts.length)) return true;
+  return false;
+}
+async function canLeave(){  // before anything that would close the open form
+  if (!B.editing && !B.ver) return true;
+  if (formDirty() && !await ask('Discard your unsaved edit?', 'What you changed in the open form will be lost.', 'Discard', true)) return false;
+  B.form = null; B.ver = null; B.editing = null; return true;
+}
+function focusForm(){
+  const t = document.querySelector('#bLeft [data-ff=text], #bLeft [data-v=text], #bLeft .bform input[data-f=cen]');
+  if (t) { t.focus(); if (t.setSelectionRange) t.setSelectionRange(t.value.length, t.value.length); }
 }
 
 function acts(id, opts = {}){
   if (opts.fact) return '<span class="badge" title="An approved draft from the facts table; edit it with apply.py">approved draft</span>';
-  return `<div class="acts">${opts.noEdit ? '' : `<button class="mini" data-act="edit" data-id="${esc(id)}">Edit</button>`}
-    ${opts.version ? `<button class="mini" data-act="version" data-id="${esc(id)}" title="Add another version of this item">+ version</button>` : ''}
-    ${opts.noMove ? '' : `<button class="mini" data-act="up" data-id="${esc(id)}">↑</button><button class="mini" data-act="down" data-id="${esc(id)}">↓</button>`}
-    ${opts.noDel ? '' : `<button class="mini" data-act="del" data-id="${esc(id)}">✕</button>`}</div>`;
-}
-function textForm(it, extra = ''){
-  return `<div class="bform" data-form="${esc(it.id)}">
-    <label class="small">English<textarea data-f="en">${esc(it.en || '')}</textarea></label>
-    <label class="small">Portuguese<textarea data-f="pt">${esc(it.pt || '')}</textarea></label>
-    <label class="small">Tags (comma separated)<input type="text" data-f="tags" value="${esc((it.tags || []).join(', '))}"></label>${extra}
-    <div class="row"><button class="primary mini" data-act="save" data-id="${esc(it.id)}">Save</button><button class="mini" data-act="cancel">Cancel</button></div></div>`;
+  return `<div class="acts">${opts.noEdit ? '' : `<button class="mini" data-act="edit" data-id="${esc(id)}" title="Edit">Edit</button>`}
+    ${opts.version ? `<button class="mini" data-act="version" data-id="${esc(id)}" title="Add another wording of this item; a CV shows at most one">+ version</button>` : ''}
+    ${opts.noMove ? '' : `<button class="mini" data-act="up" data-id="${esc(id)}" title="Move up">↑</button><button class="mini" data-act="down" data-id="${esc(id)}" title="Move down">↓</button>`}
+    ${opts.noDel ? '' : `<button class="mini" data-act="del" data-id="${esc(id)}" title="Delete from master.yaml">✕</button>`}</div>`;
 }
 function itemRow(it, pick, opts = {}){
-  if (B.editing === it.id) return textForm(it);
+  if (B.editing === it.id && B.form) return textForm('save', `Edit ${it.id}`);
   const alt = (it.alt_of || []).length && !opts.desc, tags = (it.tags || []).join(', ');
   const covers = opts.desc && (it.alt_of || []).length ? `<span class="badge" title="This description already says what these bullets say, so a CV never shows both">covers ${esc(it.alt_of.join(', '))}</span>` : '';
   return `<div class="bi ${alt ? 'ver' : ''}">${pick}
@@ -331,26 +545,19 @@ function versionPanel(){
   const v = B.ver, busy = v.busy ? 'disabled' : '';
   let gen;
   if (!B.allowGen) gen = `<div class="small muted">Drafting is off. <button class="mini" data-act="genon">Turn on drafted wording</button>
-      Drafts only fill the form below; you edit and save the exact text.</div>`;
+      Drafts only fill the box below; you edit and save the exact text.</div>`;
   else gen = `<label class="small">What should change? (optional)<textarea data-v="note" placeholder="e.g. lead with the outcome, shorter, closer to 'data platform' wording">${esc(v.note)}</textarea></label>
     <div class="row"><button class="mini primary" data-act="gen" ${busy}>${v.drafts.length ? 'Regenerate' : 'Generate drafts'}</button>
-      <span class="small ${v.error ? 'bad' : 'muted'}" id="verStatus" style="white-space:pre-wrap">${esc(v.error || v.status)}</span></div>` +
+      ${v.busy ? '<span class="spin"></span>' : ''}<span class="small ${v.error ? 'bad' : 'muted'}" id="verStatus" style="white-space:pre-wrap">${esc(v.error || v.status)}</span></div>` +
     (v.busy ? `<div class="vdrafts" id="verLive">${liveHtml(v)}</div>` : '') +
     (v.drafts.length ? `<div class="vdrafts">` + v.drafts.map((d, i) => `<div class="vdraft"><div>${esc(d[v.lang])}</div>
-        <button class="mini" data-act="usedraft" data-i="${i}" title="Copies both languages into the form">Use this</button>
+        <button class="mini" data-act="usedraft" data-i="${i}" title="Copies both languages into the box below">Use this</button>
         <div class="tagl">${esc(d.note)}</div><span></span>${d.warnings.map(w => `<div class="warn">⚠ ${esc(w)}: only keep it if it's true</div><span></span>`).join('')}</div>`).join('') + '</div>' : '');
-  const other = v.lang === 'en' ? 'pt' : 'en', NAME = {en: 'English', pt: 'Portuguese'};
-  const changed = l => v[l].trim() !== v.orig[l].trim(), stale = changed('en') !== changed('pt') ? (changed('en') ? 'pt' : 'en') : null;
-  return `<div class="vpanel" data-form="ver"><div class="row"><b class="small grow">New version of ${esc(v.id)}</b>
-      <span class="seg">${['en', 'pt'].map(l => `<button data-act="verlang" data-l="${l}" class="${v.lang === l ? 'on' : ''}">${l.toUpperCase()}</button>`).join('')}</span></div>${gen}
-    <div class="bform"><label class="small">${NAME[v.lang]}<textarea data-v="text" data-l="${v.lang}">${esc(v[v.lang])}</textarea></label>
-      ${stale ? `<div class="warn small">${stale === v.lang ? `This ${NAME[stale]} text is still the original's, but the ${NAME[other]} was changed.` : `The ${NAME[stale]} text still matches the original. Switch to ${stale.toUpperCase()} to update it.`}</div>` : ''}
+  return `<div class="vpanel" data-form="ver"><div class="row"><b class="small grow">New version of ${esc(v.id)}</b>${langToggle('verlang', v.lang)}</div>${gen}
+    <div class="bform"><label class="small">${LANG_NAME[v.lang]}<textarea data-v="text" data-l="${v.lang}">${esc(v[v.lang])}</textarea></label>${staleNote(v)}
       <label class="small">Tags (comma separated)<input type="text" data-v="tags" value="${esc(v.tags)}"></label>
-      <div class="row"><button class="primary mini" data-act="savever">Save version</button><button class="mini" data-act="cancel">Cancel</button></div></div></div>`;
-}
-function keepVer(){  // typed text survives redraws
-  const f = B.ver && document.querySelector('[data-form="ver"]'); if (!f) return;
-  f.querySelectorAll('[data-v]').forEach(e => B.ver[e.dataset.v === 'text' ? e.dataset.l : e.dataset.v] = e.value);
+      <div class="row"><button class="primary mini" data-act="savever">Save version</button><button class="mini" data-act="cancel">Cancel</button>
+        <span class="muted small">Ctrl+Enter saves, Esc cancels</span></div></div></div>`;
 }
 // Live preview: the model's answer streams in as unfinished JSON; pull out each
 // draft's text so far (preview only; the finished drafts are checked on the server).
@@ -365,9 +572,9 @@ function partialTexts(text, key){
 function liveHtml(v){
   const other = v.lang === 'en' ? 'pt' : 'en', a = partialTexts(v.live || '', v.lang), b = partialTexts(v.live || '', other);
   const n = Math.max(a.length, b.length);
-  if (!n) return `<div class="vdraft"><div class="muted">Waiting for the model to start writing${v.t0 ? ` (${Math.round((Date.now() - v.t0) / 1000)} s)` : ''}…
-    It loads first if it isn't in memory, and waits its turn if another CV or a benchmark is using it. The drafts appear here as they are written.</div><span></span></div>`;
-  return Array.from({length: n}, (_, i) => `<div class="vdraft"><div>${a[i] ? esc(a[i]) : `<span class="muted">${esc(b[i] || '')}</span>`}<span class="muted">▍</span></div><span class="tagl">writing…</span></div>`).join('');
+  if (!n) return `<div class="vdraft"><div class="muted">Waiting for the model to start writing${v.t0 ? ` (${Math.round((Date.now() - v.t0) / 1000)} s)` : ''}...
+    It loads first if it isn't in memory, and waits its turn if another CV is being made. The drafts appear here as they are written.</div><span></span></div>`;
+  return Array.from({length: n}, (_, i) => `<div class="vdraft"><div>${a[i] ? esc(a[i]) : `<span class="muted">${esc(b[i] || '')}</span>`}<span class="muted">▍</span></div><span class="tagl">writing...</span></div>`).join('');
 }
 async function generateVersions(){
   keepVer(); const v = B.ver; v.busy = true; v.error = ''; v.status = 'Starting...'; v.live = ''; v.t0 = Date.now(); drawBuilder();
@@ -383,28 +590,23 @@ async function generateVersions(){
   drawBuilder();
 }
 function bulletRows(o, kind){
-  const chosen = new Set(B.sel.bullets[o.id] || []);
-  const rows = grouped(o.bullets).map(b => itemRow(b, `<input type="checkbox" data-pick="bullet" data-owner="${esc(o.id)}" value="${esc(b.id)}" ${chosen.has(b.id) ? 'checked' : ''}>`,
+  const lim = B.m.limits, chosen = B.sel.bullets[o.id] || [];
+  const rows = grouped(o.bullets).map(b => itemRow(b, `<input type="checkbox" data-pick="bullet" data-owner="${esc(o.id)}" value="${esc(b.id)}" ${chosen.includes(b.id) ? 'checked' : ''}>`,
                                             {version: true})).join('');
-  const adding = B.editing === 'new:' + o.id ? textForm({id: 'new:' + o.id, tags: o.tags || []}) : '';
-  return rows + adding + `<div style="padding:4px 0 6px 30px"><button class="mini" data-act="addbullet" data-id="${esc(o.id)}">+ bullet</button>
-    <span class="muted small">${kind === 'job' ? `${chosen.size} of max ${B.m.limits.max_bullets_per_job}` : kind === 'project' ? `${chosen.size} of max ${B.m.limits.max_bullets_per_project}` : ''}</span></div>`;
+  const adding = B.editing === 'new:' + o.id && B.form ? textForm('save', 'New bullet') : '';
+  const max = kind === 'job' ? lim.max_bullets_per_job : kind === 'project' ? lim.max_bullets_per_project : null;
+  const min = kind === 'job' ? lim.min_bullets_per_job : 0, n = chosen.length;
+  const shown = kind !== 'project' || B.sel.project_ids.includes(o.id);
+  const count = max && shown ? `<span class="small ${n > max || n < min ? 'bad' : 'muted'}">${n} picked (${min ? `min ${min}, ` : ''}max ${max})</span>` : '';
+  return rows + adding + `<div class="row" style="padding:4px 0 6px 30px;gap:8px"><button class="mini" data-act="addbullet" data-id="${esc(o.id)}">+ bullet</button>${count}</div>`;
 }
 function descRows(o){
   if (o.description == null && !(o.description_alts || []).length) return '';
-  const cur = B.sel.descriptions[o.id] || 'default';
-  const def = {id: o.id + '#description', en: EN(o.description || ''), pt: typeof o.description === 'string' ? o.description : (o.description?.pt || '')};
-  const name = `desc-${esc(o.id)}`;
-  let h = B.editing === def.id ? descForm(o) : `<div class="bi"><input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="default" ${cur === 'default' ? 'checked' : ''}>
-    <div class="txt"><i>${esc(T(o.description))}</i><div class="tagl">default description</div></div>${acts(def.id, {noDel: true})}</div>`;
+  const cur = B.sel.descriptions[o.id] || 'default', name = `desc-${esc(o.id)}`, key = o.id + DESC;
+  let h = B.editing === key && B.form ? textForm('savedesc', 'Default description') : `<div class="bi"><input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="default" ${cur === 'default' ? 'checked' : ''}>
+    <div class="txt"><i>${esc(T(o.description))}</i><div class="tagl">default description</div></div>${acts(key, {noDel: true, noMove: true})}</div>`;
   h += (o.description_alts || []).map(d => itemRow(d, `<input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="${esc(d.id)}" ${cur === d.id ? 'checked' : ''}>`, {desc: true})).join('');
   return h;
-}
-function descForm(o){
-  const d = o.description || {}; const en = EN(d), pt = typeof d === 'string' ? d : d.pt;
-  return `<div class="bform" data-form="${esc(o.id)}#description"><label class="small">Default description (English)<textarea data-f="en">${esc(en)}</textarea></label>
-    <label class="small">Portuguese<textarea data-f="pt">${esc(pt || '')}</textarea></label>
-    <div class="row"><button class="primary mini" data-act="savedesc" data-id="${esc(o.id)}">Save</button><button class="mini" data-act="cancel">Cancel</button></div></div>`;
 }
 function catEditor(c){
   const lines = c.items.map(i => typeof i === 'string' ? i : (i.en === i.pt ? i.en : `${i.en} | ${i.pt}`)).join('\n');
@@ -413,49 +615,57 @@ function catEditor(c){
     <label class="small">Items, one per line ("English | Portuguese" when they differ)<textarea data-f="items" style="min-height:160px">${esc(lines)}</textarea></label>
     <div class="row"><label class="small"><input type="checkbox" data-f="required" ${c.required ? 'checked' : ''}> required in its layout</label>
       <label class="small">min items <input type="number" data-f="min" min="0" style="width:70px" value="${c.min_items || ''}"></label></div>
-    <div class="row"><button class="primary mini" data-act="savecat" data-id="${esc(c.id)}">Save</button><button class="mini" data-act="cancel">Cancel</button></div></div>`;
+    <div class="row"><button class="primary mini" data-act="savecat" data-id="${esc(c.id)}">Save</button><button class="mini" data-act="cancel">Cancel</button>
+      <span class="muted small">Ctrl+Enter saves, Esc cancels</span></div></div>`;
+}
+function section(key, title, side, body){
+  const closed = B.closed.has(key);
+  return `<div class="bsec ${closed ? 'closed' : ''}"><h3 data-sec="${key}" title="Click to ${closed ? 'expand' : 'collapse'}"><span><i class="caret">${closed ? '▸' : '▾'}</i> ${title}</span>${side}</h3><div class="bbody">${body}</div></div>`;
 }
 
 function drawBuilder(){
-  keepVer();
-  const m = B.m, s = B.sel, left = $('bLeft'), scroll = left.scrollTop;
+  keepVer(); keepForm();
+  const m = B.m, s = B.sel, lim = m.limits, left = $('bLeft'), scroll = left.scrollTop;
+  seg($('bLang'), B.lang, async l => { B.lang = l; drawBuilder(); schedulePreview(); });
   let h = '';
-  // headline + summary
-  const heads = [{id: 'default', en: EN(m.profile.headline || ''), pt: m.profile.headline?.pt}, ...(m.profile.headline_alts || [])];
-  h += `<div class="bsec"><h3><span>Headline</span><button class="mini" data-act="addheadline">+ option</button></h3><div class="bent">` +
+  const heads = [{id: 'default'}, ...(m.profile.headline_alts || [])];
+  h += section('headline', 'Headline', '<button class="mini" data-act="addheadline">+ option</button>', `<div class="bent">` +
     heads.map(x => x.id === 'default'
       ? `<div class="bi"><input type="radio" name="hl" data-pick="headline" value="default" ${!s.headline_id ? 'checked' : ''}><div class="txt">${esc(T(m.profile.headline))}<div class="tagl">default</div></div><span></span></div>`
       : itemRow(x, `<input type="radio" name="hl" data-pick="headline" value="${esc(x.id)}" ${s.headline_id === x.id ? 'checked' : ''}>`)).join('') +
-    (B.editing === 'new:headline' ? textForm({id: 'new:headline', tags: []}) : '') + `</div></div>`;
-  h += `<div class="bsec"><h3><span>Summary</span><button class="mini" data-act="addsummary">+ summary</button></h3><div class="bent">` +
+    (B.editing === 'new:headline' && B.form ? textForm('save', 'New headline option') : '') + '</div>');
+  h += section('summary', 'Summary', '<button class="mini" data-act="addsummary">+ summary</button>', `<div class="bent">` +
     grouped(m.summaries).map(x => itemRow(x, `<input type="radio" name="sum" data-pick="summary" value="${esc(x.id)}" ${s.summary_id === x.id ? 'checked' : ''}>`, {version: true})).join('') +
-    (B.editing === 'new:summary' ? textForm({id: 'new:summary', tags: []}) : '') + `</div></div>`;
+    (B.editing === 'new:summary' && B.form ? textForm('save', 'New summary') : '') + '</div>');
+  const total = [...m.jobs.map(j => j.id), ...s.project_ids].reduce((n, id) => n + (s.bullets[id] || []).length, 0);
   for (const sec of m.layout.sections) {
-    if (sec === 'experience') h += `<div class="bsec"><h3><span>Experience</span><span class="muted small">every job is always shown</span></h3>` + m.jobs.map(j =>
-      `<div class="bent"><div class="head"><span class="grow">${esc(T(j.title))}${j.company ? ' · ' + esc(j.company) : ''}</span><span class="muted small">${esc(j.start)} - ${esc(j.end || 'present')}</span></div>${descRows(j)}${bulletRows(j, 'job')}</div>`).join('') + '</div>';
-    if (sec === 'projects' && m.projects.length) h += `<div class="bsec"><h3><span>Projects</span><span class="muted small">max ${m.limits.max_projects}</span></h3>` + m.projects.map(p =>
-      `<div class="bent"><div class="head"><input type="checkbox" data-pick="project" value="${esc(p.id)}" ${s.project_ids.includes(p.id) ? 'checked' : ''}>
+    if (sec === 'experience') h += section('experience', 'Experience',
+      `<span class="small ${total > lim.max_total_bullets ? 'bad' : 'muted'}">${total} bullets on the CV (max ${lim.max_total_bullets})</span>`,
+      m.jobs.map(j => `<div class="bent"><div class="head"><span class="grow">${esc(T(j.title))}${j.company ? ' · ' + esc(j.company) : ''}</span><span class="muted small">${esc(j.start)} - ${esc(j.end || 'present')}</span></div>${descRows(j)}${bulletRows(j, 'job')}</div>`).join(''));
+    if (sec === 'projects' && m.projects.length) h += section('projects', 'Projects',
+      `<span class="small ${s.project_ids.length > lim.max_projects ? 'bad' : 'muted'}">${s.project_ids.length} of max ${lim.max_projects} picked</span>`,
+      m.projects.map(p => `<div class="bent"><div class="head"><input type="checkbox" data-pick="project" value="${esc(p.id)}" ${s.project_ids.includes(p.id) ? 'checked' : ''}>
         <span class="grow">${esc(T(p.name))}</span>${(p.only_for_tags || []).length ? `<span class="badge" title="The selector only sees it when the job mentions one of these">only for: ${esc(p.only_for_tags.join(', '))}</span>` : ''}
-        ${acts(p.id, {noEdit: true, noDel: true})}</div>${descRows(p)}${bulletRows(p, 'project')}</div>`).join('') + '</div>';
-    if (sec === 'education' && m.education.length) h += `<div class="bsec"><h3><span>Education</span></h3>` + m.education.map(e =>
-      `<div class="bent"><div class="head"><span class="grow">${esc(T(e.degree))}</span><span class="muted small">${esc(T(e.institution))}</span></div>${bulletRows(e, 'education')}</div>`).join('') + '</div>';
+        ${acts(p.id, {noEdit: true, noDel: true})}</div>${descRows(p)}${bulletRows(p, 'project')}</div>`).join(''));
+    if (sec === 'education' && m.education.length) h += section('education', 'Education', '',
+      m.education.map(e => `<div class="bent"><div class="head"><span class="grow">${esc(T(e.degree))}</span><span class="muted small">${esc(T(e.institution))}</span></div>${bulletRows(e, 'education')}</div>`).join(''));
     if (sec === 'skills') {
-      h += `<div class="bsec"><h3><span>Skills</span><span class="muted small">a category can't go with its versions</span></h3>`;
+      let body = '';
       for (const t of Object.keys(TIER_NAMES)) {
         const cats = m.skills[t] || [];
-        h += `<div class="bent"><div class="head"><span class="grow">${TIER_NAMES[t]}</span><button class="mini" data-act="addcat" data-id="${t}">+ line</button></div>`;
+        body += `<div class="bent"><div class="head"><span class="grow">${TIER_NAMES[t]}</span><button class="mini" data-act="addcat" data-id="${t}">+ line</button></div>`;
         for (const c of cats) {
-          if (B.editing === c.id) { h += catEditor(c); continue; }
+          if (B.editing === c.id) { body += catEditor(c); continue; }
           const on = (s.skill_category_order[t] || []).includes(c.id), shown = s.skill_items[c.id] || c.items.map(EN);
-          h += `<div class="bi"><input type="checkbox" data-pick="cat" data-tier="${t}" value="${esc(c.id)}" ${on ? 'checked' : ''}>
-            <div class="txt"><b>${esc(T(c.category))}</b>${(c.alt_of || []).length ? `<span class="badge">version of ${esc(c.alt_of.join(', '))}</span>` : ''}${c.required ? '<span class="badge">required</span>' : ''}${c.min_items ? `<span class="badge">min ${c.min_items}</span>` : ''}
+          body += `<div class="bi"><input type="checkbox" data-pick="cat" data-tier="${t}" value="${esc(c.id)}" ${on ? 'checked' : ''}>
+            <div class="txt"><b>${esc(T(c.category))}</b>${(c.alt_of || []).length ? `<span class="badge" title="An alternative to ${esc(c.alt_of.join(' + '))}: never shown together">version of ${esc(c.alt_of.join(', '))}</span>` : ''}${c.required ? '<span class="badge">required</span>' : ''}${c.min_items ? `<span class="badge">min ${c.min_items}</span>` : ''}
             <div class="tagl">${esc(c.id)}</div></div>${acts(c.id)}</div>`;
-          if (on) h += `<div class="chips">` + c.items.map(i => `<label><input type="checkbox" data-pick="skill" data-cat="${esc(c.id)}" value="${esc(EN(i))}" ${shown.includes(EN(i)) ? 'checked' : ''}>${esc(T(i))}</label>`).join('') + '</div>';
+          if (on) body += `<div class="chips">` + c.items.map(i => `<label><input type="checkbox" data-pick="skill" data-cat="${esc(c.id)}" value="${esc(EN(i))}" ${shown.includes(EN(i)) ? 'checked' : ''}>${esc(T(i))}</label>`).join('') + '</div>';
         }
-        if (B.editing === 'new:cat:' + t) h += catEditor({id: 'new:cat:' + t, category: {en: '', pt: ''}, items: []});
-        h += '</div>';
+        if (B.editing === 'new:cat:' + t) body += catEditor({id: 'new:cat:' + t, category: {en: '', pt: ''}, items: []});
+        body += '</div>';
       }
-      h += '</div>';
+      h += section('skills', 'Skills', `<span class="muted small">a line can't go with its versions</span>`, body);
     }
   }
   left.innerHTML = h; left.scrollTop = scroll;
@@ -493,6 +703,7 @@ $('bLeft').addEventListener('change', e => {
     const list = all.filter(i => cur.has(i));
     if (list.length === all.length) delete s.skill_items[c.id]; else s.skill_items[c.id] = list;
   }
+  B.selDirty = true;
   drawBuilder(); schedulePreview();
 });
 
@@ -500,25 +711,36 @@ $('bLeft').addEventListener('change', e => {
 async function edit(op, args){
   let r = await api('builder_edit', op, args);
   if (r.confirm) {
-    if (!confirm(`Applications #${r.confirm.join(', #')} use this item. Their stored CVs will stop validating until you re-run or edit them. Delete anyway?`)) return null;
+    if (!await ask('This item is used by applications', `Applications #${r.confirm.join(', #')} use it. Their stored CVs will stop validating until you re-run or edit them.`, 'Delete anyway', true)) return null;
     r = await api('builder_edit', op, {...args, force: true});
   }
-  if (!r.ok) { alert('Not changed:\n\n' + (r.errors || []).join('\n')); return null; }
-  B.editing = null; applyState(r); drawBuilder(); schedulePreview(); return r;
+  if (!r.ok) { tell('Not changed', (r.errors || []).join('\n')); return null; }
+  B.editing = null; B.form = null; applyState(r); drawBuilder(); schedulePreview(); return r;
 }
 const formVals = id => { const f = document.querySelector(`[data-form="${CSS.escape(id)}"]`), v = {};
   f.querySelectorAll('[data-f]').forEach(e => v[e.dataset.f] = e.type === 'checkbox' ? e.checked : e.value); return v; };
+const openForm = async fn => { if (!await canLeave()) return; fn(); drawBuilder(); focusForm(); };
 $('bLeft').addEventListener('click', async e => {
+  const sec = e.target.closest('h3[data-sec]');
+  if (sec && !e.target.closest('[data-act]')) {
+    B.closed.has(sec.dataset.sec) ? B.closed.delete(sec.dataset.sec) : B.closed.add(sec.dataset.sec);
+    try { localStorage.setItem('bClosed', JSON.stringify([...B.closed])); } catch (err) {}
+    drawBuilder(); return;
+  }
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act, id = b.dataset.id;
-  if (act === 'edit') { B.editing = id; drawBuilder(); return; }
-  if (act === 'cancel') { B.editing = null; B.ver = null; drawBuilder(); return; }
-  if (act === 'addbullet') { B.editing = 'new:' + id; drawBuilder(); return; }
-  if (act === 'addsummary') { B.editing = 'new:summary'; drawBuilder(); return; }
-  if (act === 'addheadline') { B.editing = 'new:headline'; drawBuilder(); return; }
-  if (act === 'addcat') { B.editing = 'new:cat:' + id; drawBuilder(); return; }
+  if (act === 'edit') return openForm(() => {
+    if (id.endsWith(DESC)) { const d = findOwner(id.slice(0, -DESC.length)).description || {}; startForm(id, EN(d), typeof d === 'string' ? d : d.pt, null); }
+    else { const it = findItem(id); if (it) startForm(id, it.en, it.pt, (it.tags || []).join(', ')); else B.editing = id; }  // else: a skill line
+  });
+  if (act === 'cancel') { B.editing = null; B.form = null; B.ver = null; drawBuilder(); return; }
+  if (act === 'addbullet') return openForm(() => startForm('new:' + id, '', '', (findOwner(id).tags || []).join(', ')));
+  if (act === 'addsummary') return openForm(() => startForm('new:summary', '', '', ''));
+  if (act === 'addheadline') return openForm(() => startForm('new:headline', '', '', ''));
+  if (act === 'addcat') return openForm(() => { B.editing = 'new:cat:' + id; });
+  if (act === 'formlang') { keepForm(); B.form.lang = b.dataset.l; drawBuilder(); focusForm(); return; }
   if (act === 'up' || act === 'down') {
-    if (id.endsWith('#description')) return;
+    if (!await canLeave()) return;
     const list = [B.m.summaries, ...owners().map(o => o.bullets)].find(l => l.some(x => x.id === id));
     let delta = act === 'up' ? -1 : 1;
     if (list) {  // jump past the neighbouring original (versions are shown under theirs)
@@ -533,20 +755,22 @@ $('bLeft').addEventListener('click', async e => {
     if (o && B.sel.bullets[o.id]) { B.sel.bullets[o.id] = inMasterOrder(grouped(o.bullets).map(b => b.id), B.sel.bullets[o.id]); drawBuilder(); schedulePreview(); }
     return;
   }
-  if (act === 'del') { if (confirm(`Delete ${id} from master.yaml? (Undo can bring it back.)`)) await edit('delete', {id}); return; }
-  if (act === 'version') {  // open the version panel: the form starts as a copy of the item
-    const it = [...B.m.summaries, ...owners().flatMap(o => o.bullets)].find(x => x.id === id);
-    keepVer(); B.editing = 'ver:' + id;
-    B.ver = {id, lang: B.lang, orig: {en: it.en, pt: it.pt}, en: it.en, pt: it.pt, tags: (it.tags || []).join(', '), note: '', drafts: [], busy: false, status: '', error: ''};
-    drawBuilder(); return;
+  if (act === 'del') {
+    if (!await canLeave()) return;
+    if (await ask(`Delete ${id}?`, 'It is removed from master.yaml. Undo can bring it back.', 'Delete', true) && await edit('delete', {id})) toast(`Deleted ${id}.`, 'ok');
+    return;
   }
+  if (act === 'version') return openForm(() => {  // the version panel: the box starts as a copy of the item
+    const it = findItem(id); B.editing = 'ver:' + id;
+    B.ver = {id, lang: B.lang, orig: {en: it.en, pt: it.pt}, en: it.en, pt: it.pt, tags: (it.tags || []).join(', '), note: '', drafts: [], busy: false, status: '', error: ''};
+  });
   if (act === 'genon') {
-    if (!confirm('Turn on drafted wording (CV_ALLOW_GENERATION)? Drafts never reach a CV unless you save or approve the exact text.')) return;
+    if (!await ask('Turn on drafted wording?', 'This sets CV_ALLOW_GENERATION. Drafts never reach a CV unless you save or approve the exact text.', 'Turn on')) return;
     keepVer(); await api('save_settings', {CV_ALLOW_GENERATION: 'true'}); B.allowGen = true; drawBuilder(); return;
   }
   if (act === 'gen') { await generateVersions(); return; }
-  if (act === 'verlang') { keepVer(); B.ver.lang = b.dataset.l; drawBuilder(); return; }  // keepVer saves the text first
-  if (act === 'usedraft') {  // both languages into the form; set the box too, since a redraw reads it back
+  if (act === 'verlang') { keepVer(); B.ver.lang = b.dataset.l; drawBuilder(); focusForm(); return; }  // keepVer saves the text first
+  if (act === 'usedraft') {  // both languages into the box; set the box too, since a redraw reads it back
     const d = B.ver.drafts[+b.dataset.i]; document.querySelector('[data-form="ver"] [data-v=text]').value = d[B.ver.lang];
     B.ver.en = d.en; B.ver.pt = d.pt; drawBuilder(); return;
   }
@@ -556,101 +780,169 @@ $('bLeft').addEventListener('click', async e => {
     const isSum = B.m.summaries.some(x => x.id === src);
     const taken = new Set([...B.m.summaries.map(x => x.id), ...owners().flatMap(o => o.bullets.map(x => x.id))]);
     const newId = [src + 'v', src + 'v2', src + 'v3', src + 'v4', src + 'v5', src + 'v6'].find(x => !taken.has(x));
-    if (v.en.trim() === it.en.trim() && v.pt.trim() === it.pt.trim()) { alert('This is the same text as the original. Change it, or pick a draft.'); return; }
+    if (v.en.trim() === it.en.trim() && v.pt.trim() === it.pt.trim()) { toast('This is the same text as the original. Change it, or pick a draft.', 'bad'); return; }
     const same = ['en', 'pt'].filter(l => v[l].trim() === it[l].trim());
-    if (same.length === 1 && !confirm(`The ${same[0] === 'en' ? 'English' : 'Portuguese'} text is still the original's. Save anyway?`)) return;
+    if (same.length === 1 && !await ask(`Save with the original ${LANG_NAME[same[0]]}?`, `The ${LANG_NAME[same[0]]} text is still the original's.`, 'Save anyway')) return;
     const r = await edit('add', {kind: isSum ? 'summary' : 'bullet', parent: isSum ? null : it.owner, after: src,
                                  data: {id: newId, alt_of: (it.alt_of || []).length ? it.alt_of : [src], en: v.en, pt: v.pt, tags: v.tags}});
-    if (r) B.ver = null;
+    if (r) { B.ver = null; toast(`Saved ${newId}.`, 'ok'); }
     return;
   }
   if (act === 'save') {
-    const v = formVals(id), data = {en: v.en, pt: v.pt, tags: v.tags};
+    keepForm(); const f = B.form;
+    if (!f.en.trim() || !f.pt.trim()) { toast(`Write both texts first: the ${LANG_NAME[f.en.trim() ? 'pt' : 'en']} one is empty.`, 'bad'); return; }
+    const data = {en: f.en, pt: f.pt, tags: f.tags ?? ''};
+    let r;
     if (id.startsWith('new:')) {
       const what = id.slice(4);
-      if (what === 'summary') await edit('add', {kind: 'summary', data});
-      else if (what === 'headline') await edit('add', {kind: 'headline', data});
-      else await edit('add', {kind: 'bullet', parent: what, data});
-    } else await edit('update', {id, changes: data});
+      r = await edit('add', what === 'summary' ? {kind: 'summary', data} : what === 'headline' ? {kind: 'headline', data} : {kind: 'bullet', parent: what, data});
+    } else r = await edit('update', {id, changes: data});
+    if (r) toast('Saved.', 'ok');
     return;
   }
-  if (act === 'savedesc') { const v = formVals(id + '#description'); await edit('update', {id, changes: {description: {en: v.en, pt: v.pt}}}); return; }
+  if (act === 'savedesc') {
+    keepForm(); const f = B.form;
+    if (await edit('update', {id: id.slice(0, -DESC.length), changes: {description: {en: f.en, pt: f.pt}}})) toast('Saved.', 'ok');
+    return;
+  }
   if (act === 'savecat') {
     const v = formVals(id), items = v.items.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [en, pt] = l.split('|').map(x => x.trim()); return {en, pt: pt || en}; });
     const category = {en: v.cen.trim(), pt: v.cpt.trim() || v.cen.trim()};
-    if (id.startsWith('new:cat:')) await edit('add', {kind: 'skill_category', parent: id.slice(8), data: {category, items: items.map(i => i.en)}});
-    else await edit('update', {id, changes: {category, items, required: v.required, min_items: v.min ? +v.min : null}});
+    const r = id.startsWith('new:cat:') ? await edit('add', {kind: 'skill_category', parent: id.slice(8), data: {category, items: items.map(i => i.en)}})
+                                       : await edit('update', {id, changes: {category, items, required: v.required, min_items: v.min ? +v.min : null}});
+    if (r) toast('Saved.', 'ok');
+  }
+});
+// keyboard in forms: Ctrl+Enter saves (in the note box: generates), Esc cancels
+$('bLeft').addEventListener('keydown', async e => {
+  const form = e.target.closest('.bform, .vpanel'); if (!form) return;
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    (e.target.dataset.v === 'note' ? form.querySelector('[data-act=gen]') : form.querySelector('.primary[data-act^=save]'))?.click();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if (!formDirty() || await ask('Discard your unsaved edit?', 'What you changed in the open form will be lost.', 'Discard', true)) {
+      B.editing = null; B.form = null; B.ver = null; drawBuilder();
+    }
   }
 });
 
-// preview and toolbar
+// preview, page fit and toolbar
 function schedulePreview(){ clearTimeout(B.timer); B.timer = setTimeout(preview, 250); }
 async function preview(){
   const r = await api('builder_preview', B.sel, B.lang);
   $('bErr').textContent = r.errors.length ? 'This CV would be rejected:\n- ' + r.errors.join('\n- ') : '';
   if (r.html) $('bPreview').srcdoc = r.html;
+  scheduleFit();
 }
-$('bLang').onclick = () => { B.lang = B.lang === 'en' ? 'pt' : 'en'; drawBuilder(); schedulePreview(); };
-$('bLoad').onchange = async () => { await loadFromApp($('bLoad').value); drawBuilder(); schedulePreview(); };
-$('bUndo').onclick = () => edit('undo', {});
-$('bFit').onclick = async () => { $('bInfo').textContent = 'Rendering the PDF...';
-  const j = await follow(await api('builder_fit', B.sel, B.lang));
-  $('bInfo').textContent = j.error ? j.error : `${B.lang.toUpperCase()}: ${j.result.pages} page(s), limit ${j.result.max}.` + (j.result.pages > j.result.max ? ' Too long: untick something.' : ' Fits.'); };
-$('bPdf').onclick = async () => { const label = prompt('Role for the file name:', B.app?.role || 'manual'); if (label === null) return;
-  const j = await follow(await api('builder_save_pdf', B.sel, B.lang, label)); $('bInfo').textContent = j.error || 'Saved and opened: ' + j.result; };
-$('bToApp').onclick = async () => { if (!B.app || !confirm(`Replace the CV of application #${B.app.id} (${B.app.company}) with this selection and re-render its PDF?`)) return;
-  const j = await follow(await api('builder_save_to_app', B.app.id, B.sel)); $('bInfo').textContent = j.error || 'Saved: ' + j.result; };
+// The page count comes from the real PDF (Edge), checked a moment after the last change.
+function scheduleFit(){ clearTimeout(B.fitTimer); setFit('wait'); B.fitTimer = setTimeout(checkFit, 1200); }
+async function checkFit(){
+  const seq = ++B.fitSeq; setFit('busy');
+  const j = await follow(await api('builder_fit', B.sel, B.lang), null, 400);
+  if (seq !== B.fitSeq) return;
+  if (j.error) setFit('err', j.error); else setFit(j.result.pages > j.result.max ? 'over' : 'ok', j.result);
+}
+function setFit(st, r){
+  const b = $('bFit'), L = B.lang.toUpperCase();
+  b.className = 'fit ' + st;
+  b.textContent = st === 'ok' ? `✓ ${L} fits on ${r.pages} page${r.pages > 1 ? 's' : ''}` : st === 'over' ? `✗ ${L}: ${r.pages} pages (limit ${r.max})`
+    : st === 'err' ? '⚠ Page fit unknown' : 'Checking page fit...';
+  b.title = st === 'err' ? r : st === 'over' ? 'Too long: untick something. Click to check again.' : 'The real PDF is rendered to count the pages. Click to check again.';
+}
+$('bFit').onclick = checkFit;
+$('bLoad').onchange = async () => {
+  const v = $('bLoad').value;
+  if (!await canLeave() || (B.selDirty && !await ask('Replace your ticks?', `Your current ticks will be replaced by ${v ? 'application #' + v : 'the defaults'}.`, 'Replace'))) { drawLoad(); return; }
+  await loadFromApp(v); drawBuilder(); schedulePreview();
+};
+$('bUndo').onclick = async () => { if (!await canLeave()) return; if (await edit('undo', {})) toast('Undid the last change to master.yaml.', 'ok'); };
+$('bPdf').onclick = async () => {
+  const label = await modal({title: 'Save this CV as a PDF', body: 'It goes to the manual folder inside your PDF folder, and opens.', input: B.app?.role || 'manual', label: 'Role (for the file name)', ok: 'Save PDF'});
+  if (label === null) return;
+  toast('Saving the PDF...', '', 2000);
+  const j = await follow(await api('builder_save_pdf', B.sel, B.lang, label));
+  if (j.error) tell('The PDF was not saved', j.error); else toast('Saved and opened:\n' + j.result, 'ok', 6000);
+};
+$('bToApp').onclick = async () => {
+  if (!B.app || !await ask(`Replace the CV of #${B.app.id} (${B.app.company})?`, 'Its stored selection and PDF are replaced by these ticks.', 'Replace')) return;
+  const j = await follow(await api('builder_save_to_app', B.app.id, B.sel));
+  if (j.error) tell('Not saved', j.error); else { B.selDirty = false; toast(`Saved to #${B.app.id}:\n${j.result}`, 'ok', 6000); }
+};
 
 // ---------------------------------------------------------------- rate
-let items = [], cur = null, rlang = null, picked = null;
+let items = [], cur = null, rlang = null, picked = null, rateWarned = false;
 // Notes typed but not yet saved, per CV. Kept across language switches and CV changes
 // (and in localStorage, so a restart does not lose them) until a rating saves them.
 let drafts = {};
 try { drafts = JSON.parse(localStorage.getItem('rateDrafts') || '{}') || {}; } catch (e) { drafts = {}; }
 function keepDrafts(){ try { localStorage.setItem('rateDrafts', JSON.stringify(drafts)); } catch (e) {} }
 let noteTimer = null;
+function noteState(){
+  const has = ($('rateNote').value || '').trim();
+  $('noteState').textContent = !cur || !has ? '' : picked ? (drafts[cur] !== undefined ? 'Saving...' : 'Saved') : 'Kept until you rate this CV';
+}
 $('rateNote').addEventListener('input', () => {
   if (!cur) return;
   drafts[cur] = $('rateNote').value; keepDrafts();
   // An already rated CV saves its note as you type (a rating is needed to store a row).
   if (picked) { clearTimeout(noteTimer); const key = cur, n = picked, note = drafts[cur];
     noteTimer = setTimeout(() => saveNote(key, n, note), 600); }
+  noteState();
 });
 async function saveNote(key, n, note){
   await api('rate', key, n, note);
   const i = items.find(x => x.key === key); if (i) i.note = note;
   if (drafts[key] === note) { delete drafts[key]; keepDrafts(); }
+  noteState();
 }
-async function loadRate(){ items = await api('rate_items'); drawRateList(); if (!cur && items.length) showRate((items.find(i => !i.rating) || items[0]).key);
+function rateProgress(){ $('rateProgress').textContent = items.length ? `${items.filter(i => i.rating).length} of ${items.length} rated` : ''; }
+async function loadRate(){
+  items = await api('rate_items'); drawRateList(); rateProgress();
+  if (!cur && items.length) showRate((items.find(i => !i.rating) || items[0]).key);
   const info = await api('rate_info');
-  if (info.problems.length) alert('Some candidate files could not be read:\n\n' + info.problems.join('\n\n'));
-  if (!items.length) $('rateTitle').textContent = 'Nothing to rate yet. CVs appear here once you tailor one (New CV), or put candidate .jsonl files (with the master they were made from) in ' + info.candidates_dir; }
-function drawRateList(){ $('rateList').innerHTML = items.map(i => `<div class="item ${i.key === cur ? 'on' : ''}" data-key="${esc(i.key)}"><span class="t">#${i.n} ${esc(i.title)}</span><b class="ok">${i.rating || ''}</b></div>`).join('');
-  document.querySelectorAll('#rateList .item').forEach(d => d.onclick = () => showRate(d.dataset.key)); }
+  $('rateProblems').style.display = info.problems.length ? '' : 'none';
+  $('rateProblems').textContent = info.problems.length ? 'Some candidate files could not be read:\n' + info.problems.join('\n') : '';
+  if (!items.length) {
+    $('rateTitle').textContent = 'Nothing to rate yet';
+    $('rateLabel').textContent = 'CVs appear here once you tailor one (New CV), or put candidate .jsonl files (with the master they were made from) in ' + info.candidates_dir;
+    placeholder($('rateCv'), 'Nothing to rate yet.');
+  }
+}
+function drawRateList(){
+  $('rateList').innerHTML = items.map(i => `<div class="item ${i.key === cur ? 'on' : ''}" data-key="${esc(i.key)}"><span class="t">#${i.n} ${esc(i.title)}</span><b class="ok">${i.rating || ''}</b></div>`).join('');
+}
+$('rateList').addEventListener('click', e => { const d = e.target.closest('.item'); if (d) showRate(d.dataset.key); });
 async function showRate(key){
+  if (!key) return;
   cur = key; const i = items.find(x => x.key === key); rlang = rlang || i.lang; picked = i.rating;
   $('rateSummaryCard').style.display = 'none'; $('ratePanes').style.display = '';
   $('rateTitle').textContent = `#${i.n} ${i.title}`; $('rateNote').value = drafts[key] ?? i.note ?? '';
   $('rateLabel').textContent = i.label ? 'Made by: ' + i.label : 'Made by: hidden until rated. Keys: 1-5 rate and move on, L switches language.';
-  drawStars(); drawRateList();
+  drawStars(); drawRateList(); drawRateLang(); noteState();
   $('rateCv').srcdoc = await api('rate_cv', key, rlang); $('rateJob').textContent = await api('rate_job', key);
 }
-function drawStars(){ $('stars').innerHTML = [1,2,3,4,5].map(n => `<button class="${picked === n ? 'sel' : ''}" onclick="rateIt(${n})">${n}</button>`).join(''); }
-async function rateIt(n){ picked = n; drawStars(); clearTimeout(noteTimer);
+function drawRateLang(){ seg($('rateLang'), rlang, async l => { rlang = l; drawRateLang(); if (cur) $('rateCv').srcdoc = await api('rate_cv', cur, rlang); }); }
+function drawStars(){ $('stars').innerHTML = [1,2,3,4,5].map(n => `<button class="${picked === n ? 'sel' : ''}" onclick="rateIt(${n})" title="Rate ${n} (key ${n})">${n}</button>`).join(''); }
+async function rateIt(n){
+  if (!cur) return;
+  picked = n; drawStars(); clearTimeout(noteTimer);
   const note = $('rateNote').value; await api('rate', cur, n, note);
   if (drafts[cur] === note) { delete drafts[cur]; keepDrafts(); }
-  items = await api('rate_items');
+  items = await api('rate_items'); rateProgress();
   const idx = items.findIndex(i => i.key === cur); const next = items.slice(idx + 1).concat(items.slice(0, idx + 1)).find(i => !i.rating);
-  if (next) showRate(next.key); else { showRate(cur); rateSummary(); } }
-async function rateSummary(){ const rows = await api('rate_summary'); $('ratePanes').style.display = 'none'; const c = $('rateSummaryCard'); c.style.display = '';
-  c.innerHTML = '<h3>Mean rating per setup</h3><table><tr><th>Setup</th><th>Rated</th><th>Mean</th><th>Ratings</th></tr>' +
-    rows.map(r => `<tr><td>${esc(r.group)}</td><td>${r.rated} / ${r.total}</td><td>${r.mean ?? '-'}</td><td>${r.ratings.join(', ')}</td></tr>`).join('') + '</table>'; }
+  if (next) showRate(next.key); else { showRate(cur); rateSummary(); toast('All CVs are rated.', 'ok'); }
+}
+async function rateSummary(){
+  const rows = await api('rate_summary'); $('ratePanes').style.display = 'none'; const c = $('rateSummaryCard'); c.style.display = '';
+  c.innerHTML = '<div class="row"><h3 class="grow">Mean rating per setup</h3><button onclick="showRate(cur)">Back to the CV</button></div><table><tr><th>Setup</th><th>Rated</th><th>Mean</th><th>Ratings</th></tr>' +
+    rows.map(r => `<tr><td>${esc(r.group)}</td><td>${r.rated} / ${r.total}</td><td>${r.mean ?? '-'}</td><td>${r.ratings.join(', ')}</td></tr>`).join('') + '</table>';
+}
 $('rateSummary').onclick = rateSummary;
-// Switching language only reloads the CV; the note field is left alone.
-$('rateLang').onclick = async () => { rlang = rlang === 'en' ? 'pt' : 'en'; if (cur) $('rateCv').srcdoc = await api('rate_cv', cur, rlang); };
 document.addEventListener('keydown', e => {
-  if (!$('tab-rate').classList.contains('on') || ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
-  if (e.key >= '1' && e.key <= '5') rateIt(+e.key); else if (e.key.toLowerCase() === 'l') $('rateLang').click();
+  if (curTab !== 'rate' || document.querySelector('.modal-bg') || ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if (e.key >= '1' && e.key <= '5') rateIt(+e.key);
+  else if (e.key.toLowerCase() === 'l' && cur) $('rateLang').querySelector('button:not(.on)')?.click();
 });
 
 // ---------------------------------------------------------------- setup
@@ -659,19 +951,19 @@ async function loadSetup(){
   h += `<div class="card"><h3>Folders</h3><p class="small">${s.portable ? 'Portable app: everything lives in this folder.' : 'Running from source.'}</p>
     <p class="small muted">Data: ${esc(s.data_dir)}<br>PDFs: ${esc(s.output_dir)}<br>Settings: ${esc(s.settings_file)}</p>
     <div class="row"><button onclick="api('open_folder','data')">Open data folder</button><button onclick="api('open_folder','output')">Open PDF folder</button>
-    <button onclick="importData()">Import data from a folder...</button></div><p class="small muted" id="importMsg"></p></div>`;
+    <button onclick="importData()">Import data from a folder...</button></div></div>`;
   h += `<div class="card"><h3>Master resume</h3><p class="${s.master_ok ? 'ok' : 'bad'}" style="white-space:pre-wrap">${s.master_ok ? 'OK: ' : ''}${esc(s.master)}</p>
-    <button onclick="document.querySelector('#nav [data-tab=master]').click()">Edit in the Master tab</button> <button onclick="api('open_master')">Open master.yaml</button> <span class="muted small">The app reads it on every run.</span></div>`;
+    <div class="row"><button onclick="showTab('master')">Edit in the Master tab</button><button onclick="api('open_master')">Open master.yaml</button><span class="muted small">The app reads it on every run.</span></div></div>`;
   h += `<div class="card"><h3>PDF engine</h3><p class="${s.browser ? 'ok' : 'warn'}">${s.browser ? 'Using ' + esc(s.browser) : 'No Edge or Chrome found: PDFs need WeasyPrint.'}</p></div>`;
   if (s.local) {
     h += `<div class="card"><h3>Ollama</h3>`;
     if (o.running) h += `<p class="ok">Running (version ${esc(o.version)}).</p>`;
-    else if (o.installed) h += `<p class="warn">Installed but not running.</p><button class="primary" onclick="startOllama()">Start Ollama</button>`;
+    else if (o.installed) h += `<p class="warn">Installed but not running.</p><button class="primary" onclick="startOllama(this)">Start Ollama</button>`;
     else h += `<p class="bad">Not installed. CV Tailor needs Ollama to run models on this PC.</p><div class="row">
       ${o.winget ? '<button class="primary" onclick="installOllama(\'winget\')">Install with winget</button>' : ''}
       <button onclick="installOllama('browser')">Open the download page</button></div>
       <p class="small muted">After installing, press Recheck.</p>`;
-    h += ` <button onclick="loadSetup()">Recheck</button></div>`;
+    h += ` <button onclick="loadSetup().then(() => toast('Checked.'))">Recheck</button></div>`;
     if (o.running) {
       h += `<div class="card"><h3>Models</h3><table><tr><th>Model</th><th>Download</th><th>Use</th><th></th></tr>` +
         s.recommended.map(m => { const have = o.models.some(x => x === m.name || x === m.name + ':latest');
@@ -687,17 +979,25 @@ async function loadSetup(){
   }
   $('setup').innerHTML = h;
 }
-async function startOllama(){ await api('ollama_start'); for (let i = 0; i < 15; i++) { await sleep(1000); const s = await refreshState(); if (s.ollama?.running) break; } loadSetup(); }
-async function installOllama(how){ const r = await api('ollama_install', how); alert(r.opened === 'winget' ? 'A console opened to install Ollama. Press Recheck when it finishes.' : 'The download page opened in your browser. Install Ollama, then press Recheck.'); }
-async function pull(name, btn){ btn.disabled = true; $('pullBar').style.display = '';
+async function startOllama(btn){
+  btn.disabled = true; btn.textContent = 'Starting...';
+  await api('ollama_start'); for (let i = 0; i < 15; i++) { await sleep(1000); const s = await refreshState(); if (s.ollama?.running) break; }
+  await loadSetup(); toast(state.ollama?.running ? 'Ollama is running.' : 'Ollama did not start. Try starting it from the Start menu.', state.ollama?.running ? 'ok' : 'bad');
+}
+async function installOllama(how){
+  const r = await api('ollama_install', how);
+  tell(r.opened === 'winget' ? 'Installing Ollama' : 'Download Ollama', r.opened === 'winget' ? 'A console opened to install Ollama. Press Recheck when it finishes.' : 'The download page opened in your browser. Install Ollama, then press Recheck.');
+}
+async function pull(name, btn){ btn.disabled = true; btn.textContent = 'Downloading...'; $('pullBar').style.display = '';
   const j = await follow(await api('ollama_pull', name), j => { const p = j.progress; if (!p) return;
     $('pullMsg').textContent = `${name}: ${p.status}` + (p.total ? ` (${(p.done/1e9).toFixed(1)} of ${(p.total/1e9).toFixed(1)} GB)` : '');
     $('pullBar').firstChild.style.width = p.total ? (100 * p.done / p.total) + '%' : '0'; });
-  if (j.error) alert(j.error); loadSetup(); }
+  if (j.error) tell('Download failed', j.error); else toast(`${name} is ready.`, 'ok'); loadSetup(); }
 async function makeLong(btn){ btn.disabled = true; btn.textContent = 'Creating...';
-  const j = await follow(await api('ollama_long_context')); if (j.error) alert(j.error); loadSetup(); }
+  const j = await follow(await api('ollama_long_context')); if (j.error) tell('Not created', j.error); else toast('The 16k-context model is ready: Thorough mode can be used.', 'ok'); loadSetup(); }
 async function importData(){ const r = await api('import_data');
-  $('importMsg').textContent = r.copied?.length ? `Copied ${r.copied.join(', ')} (earlier files kept as .bak).` : 'Nothing copied: pick the folder that holds master.yaml.';
+  if (r.copied?.length) toast(`Copied ${r.copied.join(', ')} (earlier files kept as .bak).`, 'ok', 6000);
+  else if (r.from) toast('Nothing copied: pick the folder that holds master.yaml.', 'bad');
   refreshState(); }
 
 // ---------------------------------------------------------------- settings
@@ -727,29 +1027,35 @@ function drawPresets(){
   $('preset-quality').closest('.field').style.display = fieldVal('CV_LLM_BASE_URL') ? '' : 'none';  // presets are for the local engine
 }
 async function loadSettings(){
-  SET = await api('get_settings'); $('settingsFile').textContent = SET.file;
+  SET = await api('get_settings'); SET.dirty = false; $('settingsFile').textContent = SET.file; $('settingsMsg').textContent = '';
   const simple = SET.fields.filter(f => f.level === 'simple'), adv = SET.fields.filter(f => f.level !== 'simple');
   $('settingsForm').innerHTML =
     `<div class="field"><label><b>Engine</b><br><span class="muted small">where the model runs</span></label><div class="preset" id="preset-engine"></div></div>
-     <div class="field"><label><b>Quality</b><br><span class="muted small">speed against care</span></label><div class="preset" id="preset-quality"></div></div>` +
+     <div class="field"><label><b>Quality</b><br><span class="muted small">the default on the New CV tab</span></label><div class="preset" id="preset-quality"></div></div>` +
     simple.map(fieldHtml).join('') +
     `<details class="adv"><summary>Advanced: model names and exact tuning</summary>${adv.map(fieldHtml).join('')}</details>`;
   drawPresets();
 }
-$('settingsForm').addEventListener('change', e => {
+function settingsChanged(e){
   const x = e.target;
   if (x.name?.startsWith('p-')) {  // a simple choice fills in the advanced fields it stands for
     const keys = SET.presets[x.name.slice(2)][x.value];
     for (const [k, v] of Object.entries(keys)) { const f = document.querySelector(`#settingsForm [data-key="${k}"]`); if (f) f.value = v; }
   }
-  drawPresets(); $('settingsMsg').textContent = 'Not saved yet.';
-});
-$('saveSettings').onclick = async () => { const v = {}; document.querySelectorAll('#settingsForm [data-key]').forEach(e => v[e.dataset.key] = e.value);
-  await api('save_settings', v); $('settingsMsg').textContent = 'Saved.'; refreshState(); };
+  drawPresets(); SET.dirty = true; $('settingsMsg').innerHTML = '<span class="warn">Not saved yet.</span>';
+}
+$('settingsForm').addEventListener('change', settingsChanged);
+$('settingsForm').addEventListener('input', e => { if (e.target.matches('input[data-key]')) { SET.dirty = true; $('settingsMsg').innerHTML = '<span class="warn">Not saved yet.</span>'; } });
+$('saveSettings').onclick = async () => {
+  const v = {}; document.querySelectorAll('#settingsForm [data-key]').forEach(e => v[e.dataset.key] = e.value);
+  await api('save_settings', v); SET.dirty = false; $('settingsMsg').textContent = 'Saved.'; toast('Settings saved.', 'ok');
+  quality = undefined; refreshState();
+};
 
+placeholder($('newPreview'), 'Your tailored CV appears here.');
 window.addEventListener('pywebviewready', async () => {
   const s = await refreshState();
-  if (s.local && !(s.ollama?.running) || !s.master_ok) document.querySelector('#nav [data-tab=setup]').click();
+  if (s.local && !(s.ollama?.running) || !s.master_ok) showTab('setup');
 });
 </script>
 </body></html>

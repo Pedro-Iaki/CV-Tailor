@@ -85,6 +85,39 @@ FIRST_RUN_SETTINGS = {k: v for k, v in FIRST_RUN_SETTINGS.items() if v}
 IMPORTABLE = ["master.yaml", "worked_examples.yaml", "applications.db", "variants"]
 
 
+def current_quality(values: dict) -> str:
+    """The quality preset the settings match ("custom" if none)."""
+    for name, keys in PRESETS["quality"].items():
+        if all((values.get(k) or "") == v for k, v in keys.items()):
+            return name
+    return "custom"
+
+
+def with_quality(cfg: Config, quality: Optional[str]) -> Config:
+    """cfg with one run's quality preset applied (local engine only), as if the
+    preset's settings were in settings.env."""
+    keys = PRESETS["quality"].get(quality or "")
+    if not keys or not cfg.llm_base_url:
+        return cfg
+    import dataclasses
+    from .config import _careful_reasoning
+    fields = {"CV_LLM_MODE": ("careful", lambda v: v == "careful"),
+              "CV_MODEL": ("model", lambda v: v or cfg.model),
+              "CV_LLM_REASONING": ("llm_reasoning", lambda v: v or None),
+              "CV_LLM_CAREFUL_REASONING": ("careful_reasoning", lambda v: _careful_reasoning(v) if v else None),
+              "CV_LLM_MAX_TOKENS": ("llm_max_tokens", lambda v: int(v) if v else cfg.llm_max_tokens),
+              "CV_LLM_EMBED_MODEL": ("embed_model", lambda v: v or None)}
+    return dataclasses.replace(cfg, **{fields[k][0]: fields[k][1](v) for k, v in keys.items() if k in fields})
+
+
+def _settings_values() -> dict:
+    try:
+        from dotenv import dotenv_values
+        return dict(dotenv_values(settings_path())) if settings_path().exists() else {}
+    except ImportError:  # pragma: no cover
+        return {}
+
+
 def ensure_portable_layout() -> None:
     """Create Data/, Output/ and a first settings.env in the portable folder."""
     data, output, settings = default_dirs()
@@ -185,6 +218,8 @@ class Api:
             "ollama": ollama_setup.status(cfg.llm_base_url) if cfg.llm_base_url else None,
             "recommended": [{"name": n, "size": s, "why": w} for n, s, w in ollama_setup.RECOMMENDED],
             "main_model": ollama_setup.MAIN_MODEL, "long_context_model": ollama_setup.LONG_CONTEXT_MODEL,
+            "quality": current_quality(_settings_values()) if cfg.llm_base_url else None,
+            "preset_info": PRESET_INFO,
         }
 
     # ------------------------------------------------------------ new CV
@@ -192,6 +227,9 @@ class Api:
     def new_cv(self, text: str, options: dict) -> str:
         def work(job: Job) -> dict:
             ctx = self._ctx()
+            ctx.cfg = with_quality(ctx.cfg, options.get("quality"))  # this run only
+            if options.get("quality") and ctx.cfg.llm_base_url:
+                job.lines.append(f"quality: {options['quality']} ({ctx.cfg.model})")
             io = IO(out=job.lines.append, confirm=lambda q: bool(options.get("allow_duplicate")),
                     prompt=lambda q, d: d or "", interactive=False)
             opts = NewOptions(lang=options.get("lang") or None, force_generate=bool(options.get("force_generate")),
@@ -426,11 +464,7 @@ class Api:
     # ------------------------------------------------------------ settings
 
     def get_settings(self) -> dict:
-        try:
-            from dotenv import dotenv_values
-            values = dict(dotenv_values(settings_path())) if settings_path().exists() else {}
-        except ImportError:  # pragma: no cover
-            values = {}
+        values = _settings_values()
         return {"file": str(settings_path()), "presets": PRESETS, "preset_info": PRESET_INFO,
                 "fields": [{"key": k, "label": lab, "kind": kind, "help": hlp, "level": level,
                             "value": values.get(k) or ""}
