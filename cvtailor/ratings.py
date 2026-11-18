@@ -236,6 +236,8 @@ table{border-collapse:collapse;margin:14px;width:calc(100% - 28px)}td,th{border-
 <div class="panes" id="panes"><iframe id="cv" title="CV"></iframe><pre id="job"></pre></div></main>
 <script>
 let items=[], cur=null, lang=null, picked=null;
+let drafts={};try{drafts=JSON.parse(localStorage.getItem('rateDrafts')||'{}')||{}}catch(e){drafts={}}
+function keepDrafts(){try{localStorage.setItem('rateDrafts',JSON.stringify(drafts))}catch(e){}}
 const $=id=>document.getElementById(id);
 async function load(){items=await (await fetch('/api/items')).json();drawList();if(!cur){const u=items.find(i=>!i.rating)||items[0];if(u)show(u.key)}}
 function drawList(){const done=items.filter(i=>i.rating).length;$('progress').textContent=`${done} of ${items.length} rated`;
@@ -244,17 +246,19 @@ function drawList(){const done=items.filter(i=>i.rating).length;$('progress').te
 function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
 async function show(key){cur=key;const i=items.find(x=>x.key===key);lang=lang||i.lang;picked=i.rating;$('panes').style.display='';
  const tbl=document.querySelector('main table');if(tbl)tbl.remove();
- $('title').textContent=`#${i.n}  ${i.title}`;$('note').value=i.note||'';$('label').textContent=i.label?('Made by: '+i.label):'Made by: hidden until rated';
+ $('title').textContent=`#${i.n}  ${i.title}`;$('note').value=drafts[key]??i.note??'';$('label').textContent=i.label?('Made by: '+i.label):'Made by: hidden until rated';
  drawStars();drawList();$('cv').src=`/cv/${encodeURIComponent(key)}?lang=${lang}`;$('job').textContent=await (await fetch('/job/'+encodeURIComponent(key))).text()}
 function drawStars(){$('stars').innerHTML='';for(let n=1;n<=5;n++){const b=document.createElement('button');b.className='star'+(picked===n?' sel':'');b.textContent=n;b.onclick=()=>rate(n);$('stars').appendChild(b)}}
-async function rate(n){picked=n;drawStars();const r=await fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:cur,rating:n,note:$('note').value})});
- if(!r.ok){alert('Not saved: '+(await r.text()));return}await load();next()}
+async function rate(n){picked=n;drawStars();const note=$('note').value;const r=await fetch('/api/rate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:cur,rating:n,note})});
+ if(!r.ok){alert('Not saved: '+(await r.text()));return}if(drafts[cur]===note){delete drafts[cur];keepDrafts()}await load();next()}
 function next(){const idx=items.findIndex(i=>i.key===cur);const u=items.slice(idx+1).concat(items.slice(0,idx+1)).find(i=>!i.rating);if(u)show(u.key);else{show(cur);summary()}}
 async function summary(){const rows=await (await fetch('/api/summary')).json();$('panes').style.display='none';$('title').textContent='Summary: mean rating per setup';
  $('label').textContent='';const t=document.createElement('table');t.innerHTML='<tr><th>Setup</th><th>Rated</th><th>Mean</th><th>Ratings</th></tr>'+rows.map(r=>`<tr><td>${esc(r.group)}</td><td>${r.rated} / ${r.total}</td><td>${r.mean??'-'}</td><td>${r.ratings.join(', ')}</td></tr>`).join('');
  const old=document.querySelector('main table');if(old)old.remove();document.querySelector('main').appendChild(t)}
 $('save').onclick=()=>picked&&rate(picked);$('nextUnrated').onclick=next;$('showSummary').onclick=summary;
-$('lang').onclick=()=>{lang=lang==='en'?'pt':'en';show(cur)};
+$('note').oninput=()=>{if(cur){drafts[cur]=$('note').value;keepDrafts()}};
+// Switching language only reloads the CV; the note is left alone.
+$('lang').onclick=()=>{lang=lang==='en'?'pt':'en';if(cur)$('cv').src=`/cv/${encodeURIComponent(cur)}?lang=${lang}`};
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'){if(e.key==='Enter'&&picked)rate(picked);return}
  if(e.key>='1'&&e.key<='5')rate(+e.key);else if(e.key==='l'||e.key==='L')$('lang').click();else if(e.key==='n'||e.key==='N')next()});
 load();

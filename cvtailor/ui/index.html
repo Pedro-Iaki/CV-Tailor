@@ -178,6 +178,24 @@ async function regenApp(id){
 
 // ---------------------------------------------------------------- rate
 let items = [], cur = null, rlang = null, picked = null;
+// Notes typed but not yet saved, per CV. Kept across language switches and CV changes
+// (and in localStorage, so a restart does not lose them) until a rating saves them.
+let drafts = {};
+try { drafts = JSON.parse(localStorage.getItem('rateDrafts') || '{}') || {}; } catch (e) { drafts = {}; }
+function keepDrafts(){ try { localStorage.setItem('rateDrafts', JSON.stringify(drafts)); } catch (e) {} }
+let noteTimer = null;
+$('rateNote').addEventListener('input', () => {
+  if (!cur) return;
+  drafts[cur] = $('rateNote').value; keepDrafts();
+  // An already rated CV saves its note as you type (a rating is needed to store a row).
+  if (picked) { clearTimeout(noteTimer); const key = cur, n = picked, note = drafts[cur];
+    noteTimer = setTimeout(() => saveNote(key, n, note), 600); }
+});
+async function saveNote(key, n, note){
+  await api('rate', key, n, note);
+  const i = items.find(x => x.key === key); if (i) i.note = note;
+  if (drafts[key] === note) { delete drafts[key]; keepDrafts(); }
+}
 async function loadRate(){ items = await api('rate_items'); drawRateList(); if (!cur && items.length) showRate((items.find(i => !i.rating) || items[0]).key);
   const info = await api('rate_info');
   if (info.problems.length) alert('Some candidate files could not be read:\n\n' + info.problems.join('\n\n'));
@@ -187,20 +205,24 @@ function drawRateList(){ $('rateList').innerHTML = items.map(i => `<div class="i
 async function showRate(key){
   cur = key; const i = items.find(x => x.key === key); rlang = rlang || i.lang; picked = i.rating;
   $('rateSummaryCard').style.display = 'none'; $('ratePanes').style.display = '';
-  $('rateTitle').textContent = `#${i.n} ${i.title}`; $('rateNote').value = i.note || '';
+  $('rateTitle').textContent = `#${i.n} ${i.title}`; $('rateNote').value = drafts[key] ?? i.note ?? '';
   $('rateLabel').textContent = i.label ? 'Made by: ' + i.label : 'Made by: hidden until rated. Keys: 1-5 rate and move on, L switches language.';
   drawStars(); drawRateList();
   $('rateCv').srcdoc = await api('rate_cv', key, rlang); $('rateJob').textContent = await api('rate_job', key);
 }
 function drawStars(){ $('stars').innerHTML = [1,2,3,4,5].map(n => `<button class="${picked === n ? 'sel' : ''}" onclick="rateIt(${n})">${n}</button>`).join(''); }
-async function rateIt(n){ picked = n; drawStars(); await api('rate', cur, n, $('rateNote').value); items = await api('rate_items');
+async function rateIt(n){ picked = n; drawStars(); clearTimeout(noteTimer);
+  const note = $('rateNote').value; await api('rate', cur, n, note);
+  if (drafts[cur] === note) { delete drafts[cur]; keepDrafts(); }
+  items = await api('rate_items');
   const idx = items.findIndex(i => i.key === cur); const next = items.slice(idx + 1).concat(items.slice(0, idx + 1)).find(i => !i.rating);
   if (next) showRate(next.key); else { showRate(cur); rateSummary(); } }
 async function rateSummary(){ const rows = await api('rate_summary'); $('ratePanes').style.display = 'none'; const c = $('rateSummaryCard'); c.style.display = '';
   c.innerHTML = '<h3>Mean rating per setup</h3><table><tr><th>Setup</th><th>Rated</th><th>Mean</th><th>Ratings</th></tr>' +
     rows.map(r => `<tr><td>${esc(r.group)}</td><td>${r.rated} / ${r.total}</td><td>${r.mean ?? '-'}</td><td>${r.ratings.join(', ')}</td></tr>`).join('') + '</table>'; }
 $('rateSummary').onclick = rateSummary;
-$('rateLang').onclick = () => { rlang = rlang === 'en' ? 'pt' : 'en'; if (cur) showRate(cur); };
+// Switching language only reloads the CV; the note field is left alone.
+$('rateLang').onclick = async () => { rlang = rlang === 'en' ? 'pt' : 'en'; if (cur) $('rateCv').srcdoc = await api('rate_cv', cur, rlang); };
 document.addEventListener('keydown', e => {
   if (!$('tab-rate').classList.contains('on') || ['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
   if (e.key >= '1' && e.key <= '5') rateIt(+e.key); else if (e.key.toLowerCase() === 'l') $('rateLang').click();
