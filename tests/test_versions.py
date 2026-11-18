@@ -85,3 +85,29 @@ def test_desktop_draft_job_writes_nothing(make_ctx, tmp_path, monkeypatch):
     assert j["error"] is None and j["result"][0]["en"] == GOOD["en"]
     assert any("Drafting with" in line for line in j["lines"])
     assert mp.read_bytes() == before
+
+
+def test_local_client_streams_the_answer(monkeypatch):
+    import io
+    import json
+    from cvtailor import local_llm
+    from cvtailor.llm import LLM
+    answer = json.dumps({"drafts": [GOOD]})
+    pieces = [answer[:30], answer[30:90], answer[90:]]
+    events = [b'data: ' + json.dumps({"choices": [{"delta": {"content": p}, "finish_reason": None}]}).encode() + b"\n\n"
+              for p in pieces]
+    events += [b'data: ' + json.dumps({"choices": [{"delta": {}, "finish_reason": "stop"}]}).encode() + b"\n\n",
+               b'data: ' + json.dumps({"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 7}}).encode() + b"\n\n",
+               b"data: [DONE]\n\n"]
+    sent = {}
+
+    def urlopen(req, timeout=None):
+        sent.update(json.loads(req.data))
+        return io.BytesIO(b"".join(events))
+    monkeypatch.setattr(local_llm.urllib.request, "urlopen", urlopen)
+    seen = []
+    llm = LLM("m", None, client=local_llm.LocalClient("http://x/v1"))
+    drafts, usage = llm.versions("ctx", n=3, reasoning="none", on_text=seen.append)
+    assert sent["stream"] is True and sent["reasoning_effort"] == "none"
+    assert drafts == [GOOD] and usage.output_tokens == 7
+    assert seen[-1] == answer and len(seen) == 3 and seen[0] == pieces[0]

@@ -17,7 +17,7 @@ import re
 import urllib.error
 import urllib.request
 from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .llm import LLMError
 
@@ -35,11 +35,14 @@ class LocalClient:
         # the context window.
         self.reasoning = reasoning
         self.accepts_reasoning = True  # LLM may override reasoning per call
+        self.accepts_stream = True     # create(on_text=...) streams the answer
         self.messages = self  # so callers can write client.messages.create(...)
 
     def create(self, *, model: str, max_tokens: int, system: list[dict], messages: list[dict],
                output_config: Optional[dict] = None, reasoning: Optional[str] = None,
-               **_ignored: Any) -> SimpleNamespace:
+               on_text: Optional[Callable[[str], None]] = None, **_ignored: Any) -> SimpleNamespace:
+        """on_text, if given, streams the answer: it is called with the text so far
+        after every chunk (for a live preview). The result is the same either way."""
         # Anthropic-only fields (cache_control, effort, tools) have no equivalent here
         # and are dropped. The cached system blocks become one system message.
         schema = (output_config or {}).get("format", {}).get("schema")
@@ -58,7 +61,7 @@ class LocalClient:
                 "type": "json_schema",
                 "json_schema": {"name": "result", "strict": True, "schema": schema},
             }
-        data = self._post(body)
+        data = self._stream(body, on_text) if on_text else self._post(body)
         try:
             choice = data["choices"][0]
             text = choice["message"].get("content") or ""
@@ -73,7 +76,38 @@ class LocalClient:
                                   output_tokens=u.get("completion_tokens", 0)),
         )
 
+    def _stream(self, body: dict, on_text: Callable[[str], None]) -> dict:
+        """POST with stream=true (server-sent events) and rebuild the response that a
+        non-streamed call returns."""
+        body = {**body, "stream": True, "stream_options": {"include_usage": True}}
+        text, finish, usage = [], None, {}
+
+        def read(resp: Any) -> None:
+            nonlocal finish, usage
+            for raw in resp:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if payload == "[DONE]":
+                    break
+                chunk = json.loads(payload)
+                usage = chunk.get("usage") or usage
+                for ch in chunk.get("choices") or []:
+                    piece = (ch.get("delta") or {}).get("content")
+                    if piece:
+                        text.append(piece)
+                        on_text("".join(text))
+                    finish = ch.get("finish_reason") or finish
+        self._request(body, read)
+        return {"choices": [{"message": {"content": "".join(text)}, "finish_reason": finish}], "usage": usage}
+
     def _post(self, body: dict) -> dict:
+        out: dict = {}
+        self._request(body, lambda resp: out.update(json.loads(resp.read().decode("utf-8"))))
+        return out
+
+    def _request(self, body: dict, handle: Callable[[Any], None]) -> None:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -81,7 +115,7 @@ class LocalClient:
                                      headers=headers, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                handle(resp)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace").strip()[:300]
             raise LLMError(f"local LLM at {self.url} answered HTTP {e.code}: {detail}") from None

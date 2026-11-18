@@ -150,7 +150,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function api(name, ...args){ return await window.pywebview.api[name](...args); }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-async function follow(jobId, onTick){ for(;;){ const j = await api('job_status', jobId); onTick && onTick(j); if (j.done) return j; await sleep(700); } }
+async function follow(jobId, onTick, ms = 700){ for(;;){ const j = await api('job_status', jobId); onTick && onTick(j); if (j.done) return j; await sleep(ms); } }
 let state = null;
 
 // ---------------------------------------------------------------- tabs
@@ -335,6 +335,7 @@ function versionPanel(){
   else gen = `<label class="small">What should change? (optional)<textarea data-v="note" placeholder="e.g. lead with the outcome, shorter, closer to 'data platform' wording">${esc(v.note)}</textarea></label>
     <div class="row"><button class="mini primary" data-act="gen" ${busy}>${v.drafts.length ? 'Regenerate' : 'Generate drafts'}</button>
       <span class="small ${v.error ? 'bad' : 'muted'}" id="verStatus" style="white-space:pre-wrap">${esc(v.error || v.status)}</span></div>` +
+    (v.busy ? `<div class="vdrafts" id="verLive">${liveHtml(v)}</div>` : '') +
     (v.drafts.length ? `<div class="vdrafts">` + v.drafts.map((d, i) => `<div class="vdraft"><div>${esc(d[v.lang])}</div>
         <button class="mini" data-act="usedraft" data-i="${i}" title="Copies both languages into the form">Use this</button>
         <div class="tagl">${esc(d.note)}</div><span></span>${d.warnings.map(w => `<div class="warn">⚠ ${esc(w)}: only keep it if it's true</div><span></span>`).join('')}</div>`).join('') + '</div>' : '');
@@ -351,12 +352,31 @@ function keepVer(){  // typed text survives redraws
   const f = B.ver && document.querySelector('[data-form="ver"]'); if (!f) return;
   f.querySelectorAll('[data-v]').forEach(e => B.ver[e.dataset.v === 'text' ? e.dataset.l : e.dataset.v] = e.value);
 }
+// Live preview: the model's answer streams in as unfinished JSON; pull out each
+// draft's text so far (preview only; the finished drafts are checked on the server).
+function partialTexts(text, key){
+  const out = [], re = new RegExp('"' + key + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)', 'g');
+  for (const m of text.matchAll(re)) {
+    const s = m[1].replace(/\\u?[0-9a-fA-F]{0,3}$/, '').replace(/\\$/, '');
+    try { out.push(JSON.parse('"' + s + '"')); } catch (e) { out.push(s); }
+  }
+  return out;
+}
+function liveHtml(v){
+  const other = v.lang === 'en' ? 'pt' : 'en', a = partialTexts(v.live || '', v.lang), b = partialTexts(v.live || '', other);
+  const n = Math.max(a.length, b.length);
+  if (!n) return '';
+  return Array.from({length: n}, (_, i) => `<div class="vdraft"><div>${a[i] ? esc(a[i]) : `<span class="muted">${esc(b[i] || '')}</span>`}<span class="muted">▍</span></div><span class="tagl">writing…</span></div>`).join('');
+}
 async function generateVersions(){
-  keepVer(); const v = B.ver; v.busy = true; v.error = ''; v.status = 'Starting...'; drawBuilder();
-  const j = await follow(await api('builder_draft_versions', v.id, v.note, v.drafts),
-                         j => { const el = $('verStatus'); if (el && j.lines.length) el.textContent = j.lines[j.lines.length - 1] + ' (this can take a few minutes)'; });
+  keepVer(); const v = B.ver; v.busy = true; v.error = ''; v.status = 'Starting...'; v.live = ''; drawBuilder();
+  const j = await follow(await api('builder_draft_versions', v.id, v.note, v.drafts), j => {
+    if (B.ver !== v) return;
+    const st = $('verStatus'); if (st && j.lines.length) st.textContent = j.lines[j.lines.length - 1];
+    if (j.progress && j.progress.partial !== undefined) { v.live = j.progress.partial; const el = $('verLive'); if (el) el.innerHTML = liveHtml(v); }
+  }, 300);
   if (B.ver !== v) return;  // closed meanwhile
-  v.busy = false; v.status = '';
+  v.busy = false; v.status = ''; v.live = '';
   if (j.error) v.error = j.error; else { v.drafts = [...j.result, ...v.drafts].slice(0, 12); v.status = `${j.result.length} new draft${j.result.length === 1 ? '' : 's'}`; }
   drawBuilder();
 }

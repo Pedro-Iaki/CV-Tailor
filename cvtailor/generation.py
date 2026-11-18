@@ -535,9 +535,11 @@ def drafting_llm(ctx: Context) -> tuple[Any, str, Optional[str], int]:
 
 
 def draft_versions(ctx: Context, item_id: str, note: str = "", previous: Optional[list[dict]] = None,
-                   n: int = MAX_VERSION_DRAFTS, io: IO = IO()) -> list[dict[str, Any]]:
+                   n: int = MAX_VERSION_DRAFTS, io: IO = IO(),
+                   on_text: Optional[Any] = None) -> list[dict[str, Any]]:
     """Draft up to n alternative wordings of one bullet or summary, each checked
-    against its sources. Writes nothing."""
+    against its sources. Writes nothing. on_text(text so far) gets the raw answer as
+    it streams (local servers), for a live preview only."""
     ensure_enabled(ctx)
     master = ctx.master
     item, others, versions, where = version_sources(master, item_id)
@@ -558,7 +560,7 @@ def draft_versions(ctx: Context, item_id: str, note: str = "", previous: Optiona
     io.out(f"Drafting with {label}...")
     started = time.monotonic()
     try:
-        raws, usage = llm.versions(context, n=n, reasoning=reasoning, max_tokens=max_tokens)
+        raws, usage = llm.versions(context, n=n, reasoning=reasoning, max_tokens=max_tokens, on_text=on_text)
     except LLMError as e:
         raise GenerationError(str(e)) from None
     io.out(f"{usage.output_tokens} tokens in {time.monotonic() - started:.0f} s")

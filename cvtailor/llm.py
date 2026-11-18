@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from pydantic import ValidationError
 
@@ -389,7 +389,7 @@ class LLM:
         return self._client
 
     def _call(self, *, system: list[dict], user: str, schema: Optional[dict], max_tokens: int,
-              reasoning: Optional[str] = None) -> Any:
+              reasoning: Optional[str] = None, on_text: Optional[Callable[[str], None]] = None) -> Any:
         """One call. schema=None asks for free text. reasoning overrides the local
         server's reasoning_effort for this call (ignored by the Anthropic API)."""
         output_config: dict[str, Any] = {}
@@ -407,6 +407,8 @@ class LLM:
         )
         if reasoning is not None and getattr(self.client, "accepts_reasoning", False):
             kwargs["reasoning"] = reasoning
+        if on_text is not None and getattr(self.client, "accepts_stream", False):
+            kwargs["on_text"] = on_text  # local server: stream for a live preview
         if output_config:
             kwargs["output_config"] = output_config
         try:
@@ -566,12 +568,13 @@ class LLM:
 
 
     def versions(self, context: str, n: int = 3, reasoning: Optional[str] = None,
-                 max_tokens: int = 10000) -> tuple[list[dict], Usage]:
+                 max_tokens: int = 10000,
+                 on_text: Optional[Callable[[str], None]] = None) -> tuple[list[dict], Usage]:
         """Draft alternative wordings of one item. Returned raw;
         generation.draft_versions checks them."""
         resp = self._call(system=[{"type": "text", "text": VERSION_SYSTEM_PROMPT.format(n=n)}],
                           user=context, schema=build_versions_schema(n), max_tokens=max_tokens,
-                          reasoning=reasoning)
+                          reasoning=reasoning, on_text=on_text)
         usage = Usage.from_response(resp)
         try:
             data = json.loads(_text_of(resp))

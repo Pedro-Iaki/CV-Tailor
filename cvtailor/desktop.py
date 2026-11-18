@@ -391,7 +391,8 @@ class Api:
         from .generation import draft_versions
 
         def work(job: Job) -> list[dict]:
-            return draft_versions(self._ctx(), item_id, note or "", previous or [], io=IO(out=job.lines.append))
+            return draft_versions(self._ctx(), item_id, note or "", previous or [], io=IO(out=job.lines.append),
+                                  on_text=lambda text: setattr(job, "progress", {"partial": text}))
         return self._run(work)
 
     def builder_edit(self, op: str, args: dict) -> dict:
