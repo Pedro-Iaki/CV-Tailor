@@ -112,3 +112,16 @@ def test_pipeline_careful_dry_run(make_ctx, quiet_io, job_text, selection_dict):
     assert "careful: analysis: 6 words; review: no changes" in out
     assert "--- analysis ---\n" + ANALYSIS in out
     assert len(client.calls) == 4  # meta, analysis, selection, review
+
+
+def test_examples_skip_an_excerpt_of_the_same_posting():
+    from cvtailor.careful import examples_block, same_posting
+    job = ("Senior Data Engineer at Acme. Build PySpark pipelines on Databricks, model Delta Lake "
+           "tables, orchestrate ingestion with Azure Data Factory and improve CI/CD for data jobs.")
+    excerpt = ("Senior Data Engineer - Acme. Build PySpark pipelines on Databricks; model Delta Lake "
+               "tables; orchestrate ingestion with Azure Data Factory; CI/CD for data jobs.")
+    other = "Analytics Engineer at Lumen: dbt models on BigQuery, Looker dashboards, dimensional modeling."
+    assert same_posting(excerpt, job) and not same_posting(other, job)
+    block = examples_block([{"name": "same", "job": excerpt, "notes": "n1"},
+                            {"name": "other", "job": other, "notes": "n2"}], job)
+    assert "(other)" in block and "(same)" not in block

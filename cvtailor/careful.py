@@ -146,12 +146,26 @@ def load_examples(path: Path) -> list[dict[str, str]]:
     return [e for e in data if isinstance(e, dict) and e.get("job") and e.get("notes")]
 
 
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"\w+", text.lower()) if len(w) > 2}
+
+
+def same_posting(example_job: str, job_text: str, threshold: float = 0.6) -> bool:
+    """True when an example was written for this posting: the same text, or an excerpt
+    whose words are mostly (threshold) found in the job description."""
+    if normalize_key(example_job) == normalize_key(job_text):
+        return True
+    ex = _words(example_job)
+    # Too few words to tell an excerpt from a similar posting: exact match only.
+    return len(ex) >= 15 and len(ex & _words(job_text)) / len(ex) >= threshold
+
+
 def examples_block(examples: list[dict[str, str]], job_text: str) -> str:
-    """The examples as prompt text, leaving out any written for this same posting."""
-    key = normalize_key(job_text)
+    """The examples as prompt text, leaving out any written for this same posting
+    (also when the example quotes only an excerpt of it)."""
     out = []
     for e in examples:
-        if normalize_key(e["job"]) == key:
+        if same_posting(e["job"], job_text):
             continue
         job = " ".join(e["job"].split())
         out.append(f"WORKED EXAMPLE ({e.get('name', 'another posting')}). It shows the kind of "
