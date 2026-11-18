@@ -527,7 +527,11 @@ $('bLeft').addEventListener('click', async e => {
       if (k < 0 || !nb) return;
       delta = list.findIndex(x => x.id === nb.id) - list.findIndex(x => x.id === id);
     }
-    await edit('move', {id, delta}); return;
+    if (!await edit('move', {id, delta})) return;
+    // The manual CV keeps its own bullet order; follow the new master order for this entry.
+    const o = owners().find(o => o.bullets.some(b => b.id === id));
+    if (o && B.sel.bullets[o.id]) { B.sel.bullets[o.id] = inMasterOrder(grouped(o.bullets).map(b => b.id), B.sel.bullets[o.id]); drawBuilder(); schedulePreview(); }
+    return;
   }
   if (act === 'del') { if (confirm(`Delete ${id} from master.yaml? (Undo can bring it back.)`)) await edit('delete', {id}); return; }
   if (act === 'version') {  // open the version panel: the form starts as a copy of the item
