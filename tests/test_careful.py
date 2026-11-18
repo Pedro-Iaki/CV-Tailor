@@ -1,4 +1,4 @@
-﻿"""Careful mode: hints, free-text analysis, selection, one review round."""
+"""Careful mode: hints, free-text analysis, selection, one review round."""
 
 import io
 import json

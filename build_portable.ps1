@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Continue'
 & $py -m PyInstaller --noconfirm --clean --windowed --name 'CV Tailor' --distpath $stage `
   --add-data 'templates;templates' `
   --add-data 'cvtailor\ui;cvtailor\ui' `
-  --hidden-import cvtailor.careful --hidden-import cvtailor.ratings --hidden-import cvtailor.ollama_setup `
+  --hidden-import cvtailor.careful --hidden-import cvtailor.ratings --hidden-import cvtailor.ollama_setup --hidden-import cvtailor.master_edit `
   --exclude-module weasyprint --exclude-module tkinter --exclude-module typer `
   --exclude-module mcp --exclude-module cvtailor.mcp_server --exclude-module pytest `
   --exclude-module matplotlib --exclude-module numpy --exclude-module PIL `

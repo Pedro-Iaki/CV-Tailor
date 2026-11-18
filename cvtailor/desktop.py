@@ -30,32 +30,57 @@ from .render import PdfEngineMissing, find_browser, make_render_input, render_ht
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
 
-# Settings shown on the Settings tab: key -> (label, kind, help). kind: text | secret |
-# int | choice:a,b,c | bool. Anything else in settings.env is kept as is.
-SETTINGS: dict[str, tuple[str, str, str]] = {
-    "CV_LLM_BASE_URL": ("Local model server", "text", "Ollama: http://localhost:11434/v1. Empty: use the Anthropic API."),
-    "CV_MODEL": ("Model", "text", "Name on the server, e.g. qwen3.5:35b-a3b or lfm2.5:8b."),
+# Settings: key -> (label, kind, help, level). kind: text | secret | int | choice:a,b,c |
+# bool. level: "simple" is always shown; "advanced" (model names and exact tuning) sits
+# in a collapsed section. The simple Quality and Engine choices below set several
+# advanced keys at once. Anything else in settings.env is kept as is.
+SETTINGS: dict[str, tuple[str, str, str, str]] = {
+    "ANTHROPIC_API_KEY": ("Anthropic API key", "secret", "Only for the Anthropic API engine.", "simple"),
+    "CV_PDF_NAME": ("PDF file name", "text", "{name}, {role}, {company}, {LANG}, {lang}", "simple"),
+    "CV_ALLOW_GENERATION": ("Allow drafted wording", "bool", "Off by default; drafts need your approval one by one.", "simple"),
+    "CV_LLM_BASE_URL": ("Local model server", "text", "Ollama: http://localhost:11434/v1. Empty: use the Anthropic API.", "advanced"),
+    "CV_MODEL": ("Model", "text", "Name on the server, e.g. qwen3.5:35b-a3b.", "advanced"),
     "CV_LLM_REASONING": ("Reasoning (selection)", "choice:,none,low,medium,high",
-                         "Qwen: none (fast). GPT-OSS: low. Empty: the model's default."),
-    "CV_LLM_MODE": ("Default mode", "choice:,careful", "careful: analyse, select, review (slower, better)."),
-    "CV_LLM_CAREFUL_REASONING": ("Reasoning (careful analysis)", "choice:,none,low,medium,high",
-                                 "Empty: the model's default (Qwen thinks)."),
-    "CV_LLM_EMBED_MODEL": ("Embedding model (hints)", "text", "Optional, e.g. bge-m3."),
-    "CV_LLM_MAX_TOKENS": ("Max output tokens", "int", "Thinking included; at most the context window minus about 4.5k."),
-    "CV_LLM_TIMEOUT": ("Timeout per call (s)", "int", ""),
-    "ANTHROPIC_API_KEY": ("Anthropic API key", "secret", "Only when not using a local model."),
-    "CV_PDF_ENGINE": ("PDF engine", "choice:auto,browser,weasyprint", "auto: Edge/Chrome if found."),
-    "CV_PDF_NAME": ("PDF file name", "text", "{name}, {role}, {company}, {LANG}, {lang}"),
-    "CV_ALLOW_GENERATION": ("Allow drafted wording", "bool", "Off by default; drafts need your approval one by one."),
+                         "Qwen: none (fast). Empty: the model's default.", "advanced"),
+    "CV_LLM_MODE": ("Default mode", "choice:,careful", "careful: analyse, select, review (slower, better).", "advanced"),
+    "CV_LLM_CAREFUL_REASONING": ("Reasoning (careful analysis)", "choice:,none,low,medium,high,default",
+                                 "Empty: same as selection. default: the model's own (Qwen thinks).", "advanced"),
+    "CV_LLM_EMBED_MODEL": ("Embedding model (hints)", "text", "Optional, e.g. bge-m3.", "advanced"),
+    "CV_LLM_MAX_TOKENS": ("Max output tokens", "int", "Thinking included; at most the context window minus about 4.5k.", "advanced"),
+    "CV_LLM_TIMEOUT": ("Timeout per call (s)", "int", "", "advanced"),
+    "CV_PDF_ENGINE": ("PDF engine", "choice:auto,browser,weasyprint", "auto: Edge/Chrome if found.", "advanced"),
 }
 
-FIRST_RUN_SETTINGS = {
-    "CV_LLM_BASE_URL": "http://localhost:11434/v1",
-    "CV_MODEL": "qwen3.5:35b-a3b",
-    "CV_LLM_REASONING": "none",
-    "CV_LLM_MAX_TOKENS": "4096",
-    "CV_PDF_ENGINE": "auto",
+LOCAL_URL = "http://localhost:11434/v1"
+
+# The simple layer: each option sets these advanced keys ("" removes the key).
+PRESETS: dict[str, dict[str, dict[str, str]]] = {
+    "quality": {
+        "fast": {"CV_LLM_MODE": "", "CV_MODEL": ollama_setup.MAIN_MODEL, "CV_LLM_REASONING": "none",
+                 "CV_LLM_CAREFUL_REASONING": "", "CV_LLM_MAX_TOKENS": "4096"},
+        "careful": {"CV_LLM_MODE": "careful", "CV_MODEL": ollama_setup.MAIN_MODEL, "CV_LLM_REASONING": "none",
+                    "CV_LLM_CAREFUL_REASONING": "none", "CV_LLM_MAX_TOKENS": "4096",
+                    "CV_LLM_EMBED_MODEL": "bge-m3"},
+        "thorough": {"CV_LLM_MODE": "careful", "CV_MODEL": ollama_setup.LONG_CONTEXT_MODEL,
+                     "CV_LLM_REASONING": "none", "CV_LLM_CAREFUL_REASONING": "default",
+                     "CV_LLM_MAX_TOKENS": "10000", "CV_LLM_EMBED_MODEL": "bge-m3"},
+    },
+    "engine": {
+        "local": {"CV_LLM_BASE_URL": LOCAL_URL},
+        "anthropic": {"CV_LLM_BASE_URL": ""},
+    },
 }
+PRESET_INFO = {
+    "fast": "Fast: one selection call. About 1-3 minutes per CV.",
+    "careful": "Careful: analyse the posting, select, then review once. About 6-10 minutes.",
+    "thorough": "Thorough: careful mode with the model thinking in its analysis and review. "
+                "About 15 minutes; rated best. Needs the 16k-context model (Setup tab, one click).",
+    "local": "On this PC with Ollama (private, free).",
+    "anthropic": "Anthropic API (needs an API key; the job description and master index are sent to it).",
+}
+
+FIRST_RUN_SETTINGS = {"CV_LLM_BASE_URL": LOCAL_URL, **PRESETS["quality"]["fast"], "CV_PDF_ENGINE": "auto"}
+FIRST_RUN_SETTINGS = {k: v for k, v in FIRST_RUN_SETTINGS.items() if v}
 
 IMPORTABLE = ["master.yaml", "worked_examples.yaml", "applications.db", "variants"]
 
@@ -159,6 +184,7 @@ class Api:
             "master_ok": master_ok, "master": master_msg,
             "ollama": ollama_setup.status(cfg.llm_base_url) if cfg.llm_base_url else None,
             "recommended": [{"name": n, "size": s, "why": w} for n, s, w in ollama_setup.RECOMMENDED],
+            "main_model": ollama_setup.MAIN_MODEL, "long_context_model": ollama_setup.LONG_CONTEXT_MODEL,
         }
 
     # ------------------------------------------------------------ new CV
@@ -267,6 +293,125 @@ class Api:
     def rate_summary(self) -> list[dict]:
         return self._rating_app().summary()
 
+    # ------------------------------------------------------------ builder
+    # The Master tab: the master as an editable list (edits go through master_edit,
+    # validated before each write, with undo) and a manual CV: tick items, see the
+    # preview, check the page fit, save a PDF or the selection of an application.
+
+    def _editor(self):
+        from .master_edit import MasterEditor
+        cfg = self._ctx().cfg
+        return MasterEditor(cfg.master_path, cfg.master_history_dir)
+
+    def builder_state(self) -> dict:
+        from .master import alt_conflicts
+        ctx = self._ctx()
+        try:
+            m = ctx.master
+        except (MasterError, FileNotFoundError) as e:
+            return {"error": "\n".join(getattr(e, "errors", None) or [str(e)])}
+        return {"master": m.model_dump(mode="json"),
+                "conflicts": {k: sorted(v) for k, v in alt_conflicts(m).items()},
+                "apps": self.list_apps(), "undo": self._editor().history_count()}
+
+    def _selection(self, data: dict):
+        from .schema import Selection
+        return Selection.model_validate(data)
+
+    def builder_preview(self, selection: dict, lang: str) -> dict:
+        from .validate import validate_selection
+        ctx = self._ctx()
+        try:
+            sel = self._selection(selection)
+        except Exception as e:  # noqa: BLE001 - a malformed selection, shown to the user
+            return {"html": "", "errors": [str(e)]}
+        errors = validate_selection(sel, ctx.master)
+        try:
+            html = render_html(make_render_input(ctx.master, sel, lang))
+        except Exception as e:  # noqa: BLE001 - e.g. an id the master no longer has
+            html, errors = "", [*errors, f"preview failed: {e}"]
+        return {"html": html, "errors": errors}
+
+    def builder_fit(self, selection: dict, lang: str) -> str:
+        """Render the real PDF to count its pages (a job: Edge takes a second or two)."""
+        def work(job: Job) -> dict:
+            ctx = self._ctx()
+            r = ctx.get_renderer().render(make_render_input(ctx.master, self._selection(selection), lang))
+            return {"pages": r.pages, "max": ctx.master.limits.max_pages}
+        return self._run(work)
+
+    def builder_save_pdf(self, selection: dict, lang: str, label: str = "") -> str:
+        """Write the manual CV as a PDF in Output/manual/ and open it."""
+        from .config import pdf_filename
+        from .validate import validate_selection
+
+        def work(job: Job) -> str:
+            ctx = self._ctx()
+            sel = self._selection(selection)
+            errors = validate_selection(sel, ctx.master)
+            if errors:
+                raise PipelineError("fix these first:\n  - " + "\n  - ".join(errors))
+            r = ctx.get_renderer().render(make_render_input(ctx.master, sel, lang))
+            name = pdf_filename(ctx.cfg.pdf_name, name=ctx.master.profile.name, role=label or "manual",
+                                lang=lang, company="")
+            path = ctx.cfg.output_dir / "manual" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(r.pdf)
+            _open(path)
+            return str(path)
+        return self._run(work)
+
+    def builder_from_app(self, app_id: int) -> dict:
+        app = get_app(self._ctx(), int(app_id))
+        return {"id": app["id"], "company": app["company"], "role": app["role_title"], "lang": app["lang"],
+                "selection": app["selection"]}
+
+    def builder_save_to_app(self, app_id: int, selection: dict) -> str:
+        """Store the selection in the application and re-render its PDF (no trimming:
+        an over-long CV is reported instead)."""
+        from .pipeline import check_edit, save_edit
+
+        def work(job: Job) -> str:
+            ctx = self._ctx()
+            app = get_app(ctx, int(app_id))
+            errors, fit = check_edit(ctx, app, self._selection(selection))
+            if errors:
+                raise PipelineError("not saved:\n  - " + "\n  - ".join(errors))
+            return str(save_edit(ctx, app, fit))
+        return self._run(work)
+
+    def _apps_using(self, id_: str) -> list[int]:
+        rows = db.list_applications(self._ctx().db())
+        return [r["id"] for r in rows if id_ in json.dumps(r.get("selection") or {})]
+
+    def builder_edit(self, op: str, args: dict) -> dict:
+        """One change to master.yaml: update, add, delete, move or undo. Returns the new
+        builder state, or the errors that stopped the change."""
+        from .master_edit import EditError
+        ed = self._editor()
+        new_id = None
+        try:
+            if op == "update":
+                ed.update(args["id"], args.get("changes") or {})
+            elif op == "add":
+                _, new_id = ed.add(args["kind"], args.get("parent"), args.get("data") or {}, args.get("after"))
+            elif op == "delete":
+                used = self._apps_using(args["id"])
+                if used and not args.get("force"):
+                    return {"ok": False, "confirm": used}
+                ed.delete(args["id"])
+            elif op == "move":
+                ed.move(args["id"], int(args.get("delta") or 0))
+            elif op == "undo":
+                ed.undo()
+            else:
+                return {"ok": False, "errors": [f"unknown operation '{op}'"]}
+        except EditError as e:
+            return {"ok": False, "errors": e.errors}
+        except MasterError as e:
+            return {"ok": False, "errors": e.errors}
+        return {"ok": True, "new_id": new_id, **self.builder_state()}
+
     # ------------------------------------------------------------ settings
 
     def get_settings(self) -> dict:
@@ -275,9 +420,10 @@ class Api:
             values = dict(dotenv_values(settings_path())) if settings_path().exists() else {}
         except ImportError:  # pragma: no cover
             values = {}
-        return {"file": str(settings_path()),
-                "fields": [{"key": k, "label": lab, "kind": kind, "help": hlp, "value": values.get(k) or ""}
-                           for k, (lab, kind, hlp) in SETTINGS.items()]}
+        return {"file": str(settings_path()), "presets": PRESETS, "preset_info": PRESET_INFO,
+                "fields": [{"key": k, "label": lab, "kind": kind, "help": hlp, "level": level,
+                            "value": values.get(k) or ""}
+                           for k, (lab, kind, hlp, level) in SETTINGS.items()]}
 
     def save_settings(self, values: dict) -> dict:
         from dotenv import set_key, unset_key
@@ -307,6 +453,11 @@ class Api:
         import webbrowser
         webbrowser.open(ollama_setup.DOWNLOAD_URL)
         return {"opened": "browser"}
+
+    def ollama_long_context(self) -> str:
+        """Create the 16k-context name of the main model that thorough mode uses."""
+        base = self._ctx().cfg.llm_base_url
+        return self._run(lambda job: ollama_setup.create_long_context(base))
 
     def ollama_pull(self, model: str) -> str:
         base = self._ctx().cfg.llm_base_url

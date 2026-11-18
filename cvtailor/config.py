@@ -86,6 +86,11 @@ class Config:
     pdf_engine: str = "auto"  # auto | browser (Edge/Chrome) | weasyprint
 
     @property
+    def master_history_dir(self) -> Path:
+        """Earlier versions of master.yaml kept by the desktop app's builder (for undo)."""
+        return self.data_dir / "master-history"
+
+    @property
     def worked_examples_path(self) -> Path:
         return self.data_dir / "worked_examples.yaml"
 
@@ -127,8 +132,7 @@ class Config:
             llm_reasoning=os.environ.get("CV_LLM_REASONING", "").strip().lower() or None,
             llm_max_tokens=max_tokens,
             careful=os.environ.get("CV_LLM_MODE", "").strip().lower() == "careful",
-            careful_reasoning=(os.environ["CV_LLM_CAREFUL_REASONING"].strip().lower()
-                               if "CV_LLM_CAREFUL_REASONING" in os.environ else None),
+            careful_reasoning=_careful_reasoning(os.environ.get("CV_LLM_CAREFUL_REASONING")),
             embed_model=os.environ.get("CV_LLM_EMBED_MODEL", "").strip() or None,
             pdf_engine=os.environ.get("CV_PDF_ENGINE", "").strip().lower() or "auto",
         )
@@ -170,6 +174,15 @@ def pdf_filename(template: str, *, name: str, role: str, lang: str, company: str
         base = DEFAULT_PDF_NAME.format(**fields)
     base = re.sub(r"[^A-Za-z0-9_.-]+", "_", base).strip("_")[:120]
     return f"{base}.pdf"
+
+
+def _careful_reasoning(value: str | None) -> str | None:
+    """CV_LLM_CAREFUL_REASONING: unset -> None (same as CV_LLM_REASONING); "default" or
+    set but empty -> "" (the model's own default, which for Qwen means thinking on)."""
+    if value is None:
+        return None
+    value = value.strip().lower()
+    return "" if value in ("", "default") else value
 
 
 def normalize_key(text: str) -> str:

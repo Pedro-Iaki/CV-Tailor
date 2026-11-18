@@ -21,12 +21,18 @@ from typing import Callable, Optional
 DOWNLOAD_URL = "https://ollama.com/download"
 WINGET_ID = "Ollama.Ollama"
 
-# (model, approx. download, what it is for), from the 2026-11-17 benchmark on an 8 GB GPU
+# (model, approx. download, what it is for), from the 2026-11-17 benchmark and ratings
+# on an 8 GB GPU. Only Qwen3.5 made CVs worth sending; the rest were dropped.
+MAIN_MODEL = "qwen3.5:35b-a3b"
 RECOMMENDED = [
-    ("qwen3.5:35b-a3b", "22 GB", "best choices; about 1 min per CV (thinking off)"),
-    ("lfm2.5:8b", "5 GB", "fast drafts; about 15 s per CV, more generic"),
+    (MAIN_MODEL, "22 GB", "the model CV Tailor uses; 1-3 min per CV, 6-10 min careful"),
     ("bge-m3", "1.2 GB", "optional: relevance hints in careful mode"),
 ]
+# Thorough mode thinks in its free-text passes, which needs a longer context than
+# Ollama's default. This is the main model under another name with a 16k window: no
+# extra download, it reuses the same weights.
+LONG_CONTEXT_MODEL = "cvtailor-qwen3.5-16k"
+LONG_CONTEXT = 16384
 
 
 def server_url(base_url: Optional[str]) -> str:
@@ -121,3 +127,16 @@ def pull(base_url: Optional[str], model: str, on_progress: Callable[[str, int, i
             if msg.get("error"):
                 raise RuntimeError(msg["error"])
             on_progress(msg.get("status", ""), int(msg.get("completed") or 0), int(msg.get("total") or 0))
+
+
+def create_long_context(base_url: Optional[str], source: str = MAIN_MODEL,
+                        name: str = LONG_CONTEXT_MODEL, num_ctx: int = LONG_CONTEXT) -> str:
+    """Create `name`: `source` with a larger context window (no download; same weights)."""
+    body = {"model": name, "from": source, "parameters": {"num_ctx": num_ctx}, "stream": False}
+    req = urllib.request.Request(server_url(base_url) + "/api/create", data=json.dumps(body).encode("utf-8"),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        msg = json.loads(resp.read().decode("utf-8") or "{}")
+    if msg.get("error"):
+        raise RuntimeError(msg["error"])
+    return name

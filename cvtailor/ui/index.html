@@ -42,11 +42,34 @@ th{font-size:12px;color:var(--muted);font-weight:600}tr.sel td{background:var(--
 pre.job{margin:0;white-space:pre-wrap;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;font:13px/1.45 "Segoe UI",system-ui}
 .field{display:grid;grid-template-columns:220px 1fr;gap:6px 14px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
 .field:first-child{border-top:0}.field input,.field select{width:100%}
+#tab-master{padding:12px 18px;overflow:hidden}
+.bcols{display:grid;grid-template-columns:minmax(400px,1fr) minmax(0,1.1fr);gap:16px;height:100%}
+.bleft{overflow:auto;height:100%;padding-right:6px}
+.bright{display:flex;flex-direction:column;gap:8px;min-height:0;height:100%}
+.bright iframe{flex:1;min-height:0}
+.bsec{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:12px}
+.bsec>h3{margin:0;padding:10px 12px;font-size:14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+.bsec>h3 span{flex:1}
+.bent{padding:8px 12px 4px;border-top:1px solid var(--line)}.bent:first-of-type{border-top:0}
+.bent>.head{display:flex;gap:8px;align-items:center;font-weight:600}.bent>.head .grow{flex:1}
+.bi{display:grid;grid-template-columns:22px 1fr auto;gap:6px 8px;padding:5px 0;align-items:start;border-top:1px dashed var(--line)}
+.bi:first-child{border-top:0}.bi input{margin-top:3px}
+.bi .acts{display:flex;gap:3px;opacity:.55}.bi:hover .acts{opacity:1}
+.acts button,.mini{padding:1px 7px;font-size:12px;border-radius:6px}
+.bi.ver{margin-left:18px}.bi.ver .txt{color:var(--muted)}
+.tagl{font-size:11px;color:var(--muted)}
+.badge{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:0 6px;margin-left:4px;color:var(--muted);white-space:nowrap}
+.chips{padding:2px 0 6px 30px}.chips label{display:inline-flex;gap:4px;align-items:center;margin:2px 10px 2px 0;font-size:12.5px}
+.bform{display:grid;gap:6px;padding:6px 0 8px}.bform textarea{min-height:64px}.bform input{width:100%}
+.berr{color:var(--bad);font-size:12.5px;white-space:pre-wrap;max-height:120px;overflow:auto}
+details.adv{margin-top:12px}details.adv summary{cursor:pointer;font-weight:600;padding:6px 0}
+.preset{display:grid;gap:6px}.preset label{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
+.preset label.on{border-color:var(--accent)}
 @media (max-width:900px){.cols,.rate,.panes{grid-template-columns:1fr}.field{grid-template-columns:1fr}}
 </style></head>
 <body>
 <header><b>CV Tailor</b>
-<nav id="nav"><button data-tab="new" class="on">New CV</button><button data-tab="apps">Applications</button><button data-tab="rate">Rate</button><button data-tab="setup">Setup</button><button data-tab="settings">Settings</button></nav>
+<nav id="nav"><button data-tab="new" class="on">New CV</button><button data-tab="apps">Applications</button><button data-tab="master">Master</button><button data-tab="rate">Rate</button><button data-tab="setup">Setup</button><button data-tab="settings">Settings</button></nav>
 <span class="status" id="status">Starting...</span></header>
 <main>
 
@@ -76,6 +99,23 @@ pre.job{margin:0;white-space:pre-wrap;overflow:auto;background:var(--panel);bord
  <div class="card" style="overflow:auto"><div class="row" style="margin-bottom:8px"><h3 class="grow" style="margin:0">Applications</h3><button id="refreshApps">Refresh</button><button onclick="api('open_folder','output')">Open PDF folder</button></div>
   <table><thead><tr><th>#</th><th>Date</th><th>Company / role</th><th>Lang</th><th>Status</th></tr></thead><tbody id="appRows"></tbody></table></div>
  <div><div class="row" style="margin-bottom:8px" id="appActions"><span class="muted">Select an application.</span></div><iframe id="appPreview" title="CV preview"></iframe></div>
+</div></section>
+
+<section class="tab" id="tab-master"><div class="bcols">
+ <div class="bleft" id="bLeft"><p class="muted">Loading the master...</p></div>
+ <div class="bright">
+  <div class="row">
+   <button id="bLang" title="Language of the texts and the preview">EN / PT</button>
+   <select id="bLoad" title="Start the ticks from an application's CV"></select>
+   <button id="bFit">Check page fit</button>
+   <button id="bPdf">Save PDF</button>
+   <button id="bToApp" style="display:none"></button>
+   <button id="bUndo" title="Undo the last change to master.yaml">Undo</button>
+  </div>
+  <div class="muted small" id="bInfo">Ticks choose what goes on this CV (nothing is saved until you press a button). Edit, ↑ ↓, ✕ and + change master.yaml itself; each change is validated first and can be undone.</div>
+  <div class="berr" id="bErr"></div>
+  <iframe id="bPreview" title="CV preview"></iframe>
+ </div>
 </div></section>
 
 <section class="tab" id="tab-rate"><div class="rate">
@@ -112,7 +152,7 @@ let state = null;
 document.querySelectorAll('#nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#nav button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.id === 'tab-' + b.dataset.tab));
-  ({apps: loadApps, rate: loadRate, setup: loadSetup, settings: loadSettings})[b.dataset.tab]?.();
+  ({apps: loadApps, master: loadBuilder, rate: loadRate, setup: loadSetup, settings: loadSettings})[b.dataset.tab]?.();
 });
 
 async function refreshState(){
@@ -184,6 +224,275 @@ async function regenApp(id){
   const j = await follow(await api('regen_app', id)); if (j.error) alert(j.error); else selectApp(selApp);
 }
 
+// ---------------------------------------------------------------- master builder
+// B.sel is a selection in the same shape the pipeline stores. Ticks change only B.sel;
+// the edit buttons change master.yaml through builder_edit (validated, undoable).
+const TIER_NAMES = {hands_on: 'Hands-on', working: 'Working knowledge', familiar: 'Familiar with', languages: 'Languages'};
+const B = {m: null, cx: {}, sel: null, lang: 'en', app: null, editing: null, timer: null, apps: []};
+const T = x => x == null ? '' : typeof x === 'string' ? x : (x[B.lang] || x.en || '');
+const EN = x => typeof x === 'string' ? x : x.en;
+const owners = () => [...B.m.jobs, ...B.m.projects, ...B.m.education];
+const findOwner = id => owners().find(o => o.id === id);
+const allCats = () => Object.keys(TIER_NAMES).flatMap(t => (B.m.skills[t] || []).map(c => ({...c, tier: t})));
+
+function defaultSel(){
+  const m = B.m, lim = m.limits, first = bs => bs.filter(b => !(b.alt_of || []).length);
+  const sel = {summary_id: m.summaries[0]?.id, headline_id: null, bullets: {}, project_ids: [], descriptions: {},
+               skill_category_order: {hands_on: [], working: [], familiar: [], languages: []}, skill_items: {}};
+  m.jobs.forEach(j => sel.bullets[j.id] = first(j.bullets).slice(0, lim.max_bullets_per_job).map(b => b.id));
+  m.projects.slice(0, lim.max_projects).forEach(p => { sel.project_ids.push(p.id); sel.bullets[p.id] = first(p.bullets).slice(0, lim.max_bullets_per_project).map(b => b.id); });
+  for (const t of Object.keys(TIER_NAMES)) sel.skill_category_order[t] = (m.skills[t] || []).filter(c => !(c.alt_of || []).length).map(c => c.id);
+  return sel;
+}
+function normalizeSel(){  // drop ids the master no longer has (after a delete or undo)
+  const s = B.sel, ids = new Set();
+  owners().forEach(o => { ids.add(o.id); o.bullets.forEach(b => ids.add(b.id)); (o.description_alts || []).forEach(d => ids.add(d.id)); });
+  if (!B.m.summaries.some(x => x.id === s.summary_id)) s.summary_id = B.m.summaries[0]?.id;
+  if (s.headline_id && !(B.m.profile.headline_alts || []).some(h => h.id === s.headline_id)) s.headline_id = null;
+  for (const k of Object.keys(s.bullets)) { if (!ids.has(k)) delete s.bullets[k]; else s.bullets[k] = s.bullets[k].filter(b => ids.has(b)); }
+  B.m.jobs.forEach(j => s.bullets[j.id] = s.bullets[j.id] || []);
+  s.project_ids = s.project_ids.filter(p => ids.has(p));
+  for (const [k, v] of Object.entries(s.descriptions || {})) if (!ids.has(k) || !ids.has(v)) delete s.descriptions[k];
+  const cats = new Map(allCats().map(c => [c.id, c]));
+  for (const t of Object.keys(TIER_NAMES)) s.skill_category_order[t] = (s.skill_category_order[t] || []).filter(c => cats.has(c));
+  for (const [cid, list] of Object.entries(s.skill_items || {})) {
+    const own = cats.get(cid) ? cats.get(cid).items.map(EN) : [];
+    s.skill_items[cid] = list.filter(x => own.includes(x)); if (!s.skill_items[cid].length) delete s.skill_items[cid];
+  }
+}
+function inMasterOrder(list, ids){ const pos = new Map(list.map((x, i) => [x, i])); return [...new Set(ids)].sort((a, b) => (pos.get(a) ?? 1e9) - (pos.get(b) ?? 1e9)); }
+
+async function loadBuilder(){
+  const st = await api('builder_state');
+  if (st.error) { $('bLeft').innerHTML = `<p class="bad" style="white-space:pre-wrap">${esc(st.error)}</p>`; return; }
+  applyState(st);
+  if (!B.sel) {
+    B.sel = defaultSel();
+    if (st.apps.length) await loadFromApp(st.apps[0].id);  // start from the newest application
+  }
+  drawBuilder(); schedulePreview();
+}
+function applyState(st){
+  B.m = st.master; B.cx = st.conflicts; B.apps = st.apps;
+  $('bUndo').textContent = `Undo (${st.undo})`; $('bUndo').disabled = !st.undo;
+  $('bLoad').innerHTML = `<option value="">Start from: defaults</option>` + st.apps.map(a => `<option value="${a.id}" ${B.app?.id === a.id ? 'selected' : ''}>Start from: #${a.id} ${esc(a.company)}</option>`).join('');
+  if (B.sel) normalizeSel();
+}
+async function loadFromApp(id){
+  if (!id) { B.app = null; B.sel = defaultSel(); }
+  else { const a = await api('builder_from_app', +id); B.app = a; B.sel = JSON.parse(JSON.stringify(a.selection)); B.lang = a.lang;
+         B.sel.descriptions = B.sel.descriptions || {}; B.sel.skill_items = B.sel.skill_items || {}; B.sel.headline_id = B.sel.headline_id || null; normalizeSel(); }
+  $('bToApp').style.display = B.app ? '' : 'none'; if (B.app) $('bToApp').textContent = `Save to #${B.app.id}`;
+  $('bLoad').value = B.app ? String(B.app.id) : '';
+}
+
+function acts(id, opts = {}){
+  if (opts.fact) return '<span class="badge" title="An approved draft from the facts table; edit it with apply.py">approved draft</span>';
+  return `<div class="acts">${opts.noEdit ? '' : `<button class="mini" data-act="edit" data-id="${esc(id)}">Edit</button>`}
+    ${opts.version ? `<button class="mini" data-act="version" data-id="${esc(id)}" title="Add another version of this item">+ version</button>` : ''}
+    <button class="mini" data-act="up" data-id="${esc(id)}">↑</button><button class="mini" data-act="down" data-id="${esc(id)}">↓</button>
+    ${opts.noDel ? '' : `<button class="mini" data-act="del" data-id="${esc(id)}">✕</button>`}</div>`;
+}
+function textForm(it, extra = ''){
+  return `<div class="bform" data-form="${esc(it.id)}">
+    <label class="small">English<textarea data-f="en">${esc(it.en || '')}</textarea></label>
+    <label class="small">Portuguese<textarea data-f="pt">${esc(it.pt || '')}</textarea></label>
+    <label class="small">Tags (comma separated)<input type="text" data-f="tags" value="${esc((it.tags || []).join(', '))}"></label>${extra}
+    <div class="row"><button class="primary mini" data-act="save" data-id="${esc(it.id)}">Save</button><button class="mini" data-act="cancel">Cancel</button></div></div>`;
+}
+function itemRow(it, pick, opts = {}){
+  if (B.editing === it.id) return textForm(it);
+  const alt = (it.alt_of || []).length, tags = (it.tags || []).join(', ');
+  return `<div class="bi ${alt ? 'ver' : ''}">${pick}
+    <div class="txt">${esc(T(it))}${alt ? `<span class="badge">version of ${esc(it.alt_of.join(', '))}</span>` : ''}
+      <div class="tagl">${esc(it.id)}${tags ? ' · ' + esc(tags) : ''}</div></div>${acts(it.id, {...opts, fact: !!it.origin})}</div>`;
+}
+function bulletRows(o, kind){
+  const chosen = new Set(B.sel.bullets[o.id] || []);
+  const rows = o.bullets.map(b => itemRow(b, `<input type="checkbox" data-pick="bullet" data-owner="${esc(o.id)}" value="${esc(b.id)}" ${chosen.has(b.id) ? 'checked' : ''}>`,
+                                            {version: true})).join('');
+  const adding = B.editing === 'new:' + o.id ? textForm({id: 'new:' + o.id, tags: o.tags || []}) : '';
+  return rows + adding + `<div style="padding:4px 0 6px 30px"><button class="mini" data-act="addbullet" data-id="${esc(o.id)}">+ bullet</button>
+    <span class="muted small">${kind === 'job' ? `${chosen.size} of max ${B.m.limits.max_bullets_per_job}` : kind === 'project' ? `${chosen.size} of max ${B.m.limits.max_bullets_per_project}` : ''}</span></div>`;
+}
+function descRows(o){
+  if (o.description == null && !(o.description_alts || []).length) return '';
+  const cur = B.sel.descriptions[o.id] || 'default';
+  const def = {id: o.id + '#description', en: EN(o.description || ''), pt: typeof o.description === 'string' ? o.description : (o.description?.pt || '')};
+  const name = `desc-${esc(o.id)}`;
+  let h = B.editing === def.id ? descForm(o) : `<div class="bi"><input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="default" ${cur === 'default' ? 'checked' : ''}>
+    <div class="txt"><i>${esc(T(o.description))}</i><div class="tagl">default description</div></div>${acts(def.id, {noDel: true})}</div>`;
+  h += (o.description_alts || []).map(d => itemRow(d, `<input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="${esc(d.id)}" ${cur === d.id ? 'checked' : ''}>`)).join('');
+  return h;
+}
+function descForm(o){
+  const d = o.description || {}; const en = EN(d), pt = typeof d === 'string' ? d : d.pt;
+  return `<div class="bform" data-form="${esc(o.id)}#description"><label class="small">Default description (English)<textarea data-f="en">${esc(en)}</textarea></label>
+    <label class="small">Portuguese<textarea data-f="pt">${esc(pt || '')}</textarea></label>
+    <div class="row"><button class="primary mini" data-act="savedesc" data-id="${esc(o.id)}">Save</button><button class="mini" data-act="cancel">Cancel</button></div></div>`;
+}
+function catEditor(c){
+  const lines = c.items.map(i => typeof i === 'string' ? i : (i.en === i.pt ? i.en : `${i.en} | ${i.pt}`)).join('\n');
+  return `<div class="bform" data-form="${esc(c.id)}"><label class="small">Name (English)<input type="text" data-f="cen" value="${esc(c.category.en)}"></label>
+    <label class="small">Name (Portuguese)<input type="text" data-f="cpt" value="${esc(c.category.pt)}"></label>
+    <label class="small">Items, one per line ("English | Portuguese" when they differ)<textarea data-f="items" style="min-height:160px">${esc(lines)}</textarea></label>
+    <div class="row"><label class="small"><input type="checkbox" data-f="required" ${c.required ? 'checked' : ''}> required in its layout</label>
+      <label class="small">min items <input type="number" data-f="min" min="0" style="width:70px" value="${c.min_items || ''}"></label></div>
+    <div class="row"><button class="primary mini" data-act="savecat" data-id="${esc(c.id)}">Save</button><button class="mini" data-act="cancel">Cancel</button></div></div>`;
+}
+
+function drawBuilder(){
+  const m = B.m, s = B.sel, left = $('bLeft'), scroll = left.scrollTop;
+  let h = '';
+  // headline + summary
+  const heads = [{id: 'default', en: EN(m.profile.headline || ''), pt: m.profile.headline?.pt}, ...(m.profile.headline_alts || [])];
+  h += `<div class="bsec"><h3><span>Headline</span><button class="mini" data-act="addheadline">+ option</button></h3><div class="bent">` +
+    heads.map(x => x.id === 'default'
+      ? `<div class="bi"><input type="radio" name="hl" data-pick="headline" value="default" ${!s.headline_id ? 'checked' : ''}><div class="txt">${esc(T(m.profile.headline))}<div class="tagl">default</div></div><span></span></div>`
+      : itemRow(x, `<input type="radio" name="hl" data-pick="headline" value="${esc(x.id)}" ${s.headline_id === x.id ? 'checked' : ''}>`)).join('') +
+    (B.editing === 'new:headline' ? textForm({id: 'new:headline', tags: []}) : '') + `</div></div>`;
+  h += `<div class="bsec"><h3><span>Summary</span><button class="mini" data-act="addsummary">+ summary</button></h3><div class="bent">` +
+    m.summaries.map(x => itemRow(x, `<input type="radio" name="sum" data-pick="summary" value="${esc(x.id)}" ${s.summary_id === x.id ? 'checked' : ''}>`, {version: true})).join('') +
+    (B.editing === 'new:summary' ? textForm({id: 'new:summary', tags: []}) : '') + `</div></div>`;
+  for (const sec of m.layout.sections) {
+    if (sec === 'experience') h += `<div class="bsec"><h3><span>Experience</span><span class="muted small">every job is always shown</span></h3>` + m.jobs.map(j =>
+      `<div class="bent"><div class="head"><span class="grow">${esc(T(j.title))}${j.company ? ' · ' + esc(j.company) : ''}</span><span class="muted small">${esc(j.start)} - ${esc(j.end || 'present')}</span></div>${descRows(j)}${bulletRows(j, 'job')}</div>`).join('') + '</div>';
+    if (sec === 'projects' && m.projects.length) h += `<div class="bsec"><h3><span>Projects</span><span class="muted small">max ${m.limits.max_projects}</span></h3>` + m.projects.map(p =>
+      `<div class="bent"><div class="head"><input type="checkbox" data-pick="project" value="${esc(p.id)}" ${s.project_ids.includes(p.id) ? 'checked' : ''}>
+        <span class="grow">${esc(T(p.name))}</span>${(p.only_for_tags || []).length ? `<span class="badge" title="The selector only sees it when the job mentions one of these">only for: ${esc(p.only_for_tags.join(', '))}</span>` : ''}
+        ${acts(p.id, {noEdit: true, noDel: true})}</div>${descRows(p)}${bulletRows(p, 'project')}</div>`).join('') + '</div>';
+    if (sec === 'education' && m.education.length) h += `<div class="bsec"><h3><span>Education</span></h3>` + m.education.map(e =>
+      `<div class="bent"><div class="head"><span class="grow">${esc(T(e.degree))}</span><span class="muted small">${esc(T(e.institution))}</span></div>${bulletRows(e, 'education')}</div>`).join('') + '</div>';
+    if (sec === 'skills') {
+      h += `<div class="bsec"><h3><span>Skills</span><span class="muted small">a category can't go with its versions</span></h3>`;
+      for (const t of Object.keys(TIER_NAMES)) {
+        const cats = m.skills[t] || [];
+        h += `<div class="bent"><div class="head"><span class="grow">${TIER_NAMES[t]}</span><button class="mini" data-act="addcat" data-id="${t}">+ line</button></div>`;
+        for (const c of cats) {
+          if (B.editing === c.id) { h += catEditor(c); continue; }
+          const on = (s.skill_category_order[t] || []).includes(c.id), shown = s.skill_items[c.id] || c.items.map(EN);
+          h += `<div class="bi"><input type="checkbox" data-pick="cat" data-tier="${t}" value="${esc(c.id)}" ${on ? 'checked' : ''}>
+            <div class="txt"><b>${esc(T(c.category))}</b>${(c.alt_of || []).length ? `<span class="badge">version of ${esc(c.alt_of.join(', '))}</span>` : ''}${c.required ? '<span class="badge">required</span>' : ''}${c.min_items ? `<span class="badge">min ${c.min_items}</span>` : ''}
+            <div class="tagl">${esc(c.id)}</div></div>${acts(c.id)}</div>`;
+          if (on) h += `<div class="chips">` + c.items.map(i => `<label><input type="checkbox" data-pick="skill" data-cat="${esc(c.id)}" value="${esc(EN(i))}" ${shown.includes(EN(i)) ? 'checked' : ''}>${esc(T(i))}</label>`).join('') + '</div>';
+        }
+        if (B.editing === 'new:cat:' + t) h += catEditor({id: 'new:cat:' + t, category: {en: '', pt: ''}, items: []});
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+  }
+  left.innerHTML = h; left.scrollTop = scroll;
+}
+
+// ticks
+$('bLeft').addEventListener('change', e => {
+  const x = e.target, kind = x.dataset.pick; if (!kind) return;
+  const s = B.sel, id = x.value;
+  const dropConflicts = id => { for (const c of B.cx[id] || []) {
+    for (const k of Object.keys(s.bullets)) s.bullets[k] = s.bullets[k].filter(b => b !== c);
+    for (const t of Object.keys(TIER_NAMES)) s.skill_category_order[t] = s.skill_category_order[t].filter(v => v !== c);
+    for (const [o, d] of Object.entries(s.descriptions)) if (d === c) delete s.descriptions[o]; } };
+  if (kind === 'summary') s.summary_id = id;
+  if (kind === 'headline') s.headline_id = id === 'default' ? null : id;
+  if (kind === 'bullet') {
+    const o = findOwner(x.dataset.owner), list = s.bullets[o.id] || [];
+    if (x.checked) { dropConflicts(id); s.bullets[o.id] = inMasterOrder(o.bullets.map(b => b.id), [...(s.bullets[o.id] || []), id]);
+      if (B.m.projects.some(p => p.id === o.id) && !s.project_ids.includes(o.id)) s.project_ids = inMasterOrder(B.m.projects.map(p => p.id), [...s.project_ids, o.id]); }
+    else s.bullets[o.id] = list.filter(b => b !== id);
+  }
+  if (kind === 'project') {
+    if (x.checked) { s.project_ids = inMasterOrder(B.m.projects.map(p => p.id), [...s.project_ids, id]); s.bullets[id] = s.bullets[id] || []; }
+    else { s.project_ids = s.project_ids.filter(p => p !== id); delete s.bullets[id]; delete s.descriptions[id]; }
+  }
+  if (kind === 'desc') { if (id === 'default') delete s.descriptions[x.dataset.owner]; else { dropConflicts(id); s.descriptions[x.dataset.owner] = id; } }
+  if (kind === 'cat') {
+    const t = x.dataset.tier;
+    if (x.checked) { dropConflicts(id); s.skill_category_order[t] = inMasterOrder((B.m.skills[t] || []).map(c => c.id), [...s.skill_category_order[t], id]); }
+    else { s.skill_category_order[t] = s.skill_category_order[t].filter(c => c !== id); delete s.skill_items[id]; }
+  }
+  if (kind === 'skill') {
+    const c = allCats().find(c => c.id === x.dataset.cat), all = c.items.map(EN);
+    const cur = new Set(s.skill_items[c.id] || all); x.checked ? cur.add(id) : cur.delete(id);
+    const list = all.filter(i => cur.has(i));
+    if (list.length === all.length) delete s.skill_items[c.id]; else s.skill_items[c.id] = list;
+  }
+  drawBuilder(); schedulePreview();
+});
+
+// edit buttons
+async function edit(op, args){
+  let r = await api('builder_edit', op, args);
+  if (r.confirm) {
+    if (!confirm(`Applications #${r.confirm.join(', #')} use this item. Their stored CVs will stop validating until you re-run or edit them. Delete anyway?`)) return null;
+    r = await api('builder_edit', op, {...args, force: true});
+  }
+  if (!r.ok) { alert('Not changed:\n\n' + (r.errors || []).join('\n')); return null; }
+  B.editing = null; applyState(r); drawBuilder(); schedulePreview(); return r;
+}
+const formVals = id => { const f = document.querySelector(`[data-form="${CSS.escape(id)}"]`), v = {};
+  f.querySelectorAll('[data-f]').forEach(e => v[e.dataset.f] = e.type === 'checkbox' ? e.checked : e.value); return v; };
+$('bLeft').addEventListener('click', async e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id;
+  if (act === 'edit') { B.editing = id; drawBuilder(); return; }
+  if (act === 'cancel') { B.editing = null; drawBuilder(); return; }
+  if (act === 'addbullet') { B.editing = 'new:' + id; drawBuilder(); return; }
+  if (act === 'addsummary') { B.editing = 'new:summary'; drawBuilder(); return; }
+  if (act === 'addheadline') { B.editing = 'new:headline'; drawBuilder(); return; }
+  if (act === 'addcat') { B.editing = 'new:cat:' + id; drawBuilder(); return; }
+  if (act === 'up' || act === 'down') {
+    if (id.endsWith('#description')) return;
+    await edit('move', {id, delta: act === 'up' ? -1 : 1}); return;
+  }
+  if (act === 'del') { if (confirm(`Delete ${id} from master.yaml? (Undo can bring it back.)`)) await edit('delete', {id}); return; }
+  if (act === 'version') {  // a copy of the item as a new alternative, opened for editing
+    const it = [...B.m.summaries, ...owners().flatMap(o => o.bullets.map(x => ({...x, owner: o.id})))].find(x => x.id === id);
+    const isSum = B.m.summaries.some(x => x.id === id);
+    const taken = new Set([...B.m.summaries.map(x => x.id), ...owners().flatMap(o => o.bullets.map(x => x.id))]);
+    const newId = [id + 'v', id + 'v2', id + 'v3', id + 'v4'].find(x => !taken.has(x));
+    const r = await edit('add', {kind: isSum ? 'summary' : 'bullet', parent: isSum ? null : it.owner, after: id,
+                                 data: {id: newId, alt_of: (it.alt_of || []).length ? it.alt_of : [id], en: it.en, pt: it.pt, tags: it.tags}});
+    if (r && r.new_id) { B.editing = r.new_id; drawBuilder(); }
+    return;
+  }
+  if (act === 'save') {
+    const v = formVals(id), data = {en: v.en, pt: v.pt, tags: v.tags};
+    if (id.startsWith('new:')) {
+      const what = id.slice(4);
+      if (what === 'summary') await edit('add', {kind: 'summary', data});
+      else if (what === 'headline') await edit('add', {kind: 'headline', data});
+      else await edit('add', {kind: 'bullet', parent: what, data});
+    } else await edit('update', {id, changes: data});
+    return;
+  }
+  if (act === 'savedesc') { const v = formVals(id + '#description'); await edit('update', {id, changes: {description: {en: v.en, pt: v.pt}}}); return; }
+  if (act === 'savecat') {
+    const v = formVals(id), items = v.items.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [en, pt] = l.split('|').map(x => x.trim()); return {en, pt: pt || en}; });
+    const category = {en: v.cen.trim(), pt: v.cpt.trim() || v.cen.trim()};
+    if (id.startsWith('new:cat:')) await edit('add', {kind: 'skill_category', parent: id.slice(8), data: {category, items: items.map(i => i.en)}});
+    else await edit('update', {id, changes: {category, items, required: v.required, min_items: v.min ? +v.min : null}});
+  }
+});
+
+// preview and toolbar
+function schedulePreview(){ clearTimeout(B.timer); B.timer = setTimeout(preview, 250); }
+async function preview(){
+  const r = await api('builder_preview', B.sel, B.lang);
+  $('bErr').textContent = r.errors.length ? 'This CV would be rejected:\n- ' + r.errors.join('\n- ') : '';
+  if (r.html) $('bPreview').srcdoc = r.html;
+}
+$('bLang').onclick = () => { B.lang = B.lang === 'en' ? 'pt' : 'en'; drawBuilder(); schedulePreview(); };
+$('bLoad').onchange = async () => { await loadFromApp($('bLoad').value); drawBuilder(); schedulePreview(); };
+$('bUndo').onclick = () => edit('undo', {});
+$('bFit').onclick = async () => { $('bInfo').textContent = 'Rendering the PDF...';
+  const j = await follow(await api('builder_fit', B.sel, B.lang));
+  $('bInfo').textContent = j.error ? j.error : `${B.lang.toUpperCase()}: ${j.result.pages} page(s), limit ${j.result.max}.` + (j.result.pages > j.result.max ? ' Too long: untick something.' : ' Fits.'); };
+$('bPdf').onclick = async () => { const label = prompt('Role for the file name:', B.app?.role || 'manual'); if (label === null) return;
+  const j = await follow(await api('builder_save_pdf', B.sel, B.lang, label)); $('bInfo').textContent = j.error || 'Saved and opened: ' + j.result; };
+$('bToApp').onclick = async () => { if (!B.app || !confirm(`Replace the CV of application #${B.app.id} (${B.app.company}) with this selection and re-render its PDF?`)) return;
+  const j = await follow(await api('builder_save_to_app', B.app.id, B.sel)); $('bInfo').textContent = j.error || 'Saved: ' + j.result; };
+
 // ---------------------------------------------------------------- rate
 let items = [], cur = null, rlang = null, picked = null;
 // Notes typed but not yet saved, per CV. Kept across language switches and CV changes
@@ -244,7 +553,7 @@ async function loadSetup(){
     <div class="row"><button onclick="api('open_folder','data')">Open data folder</button><button onclick="api('open_folder','output')">Open PDF folder</button>
     <button onclick="importData()">Import data from a folder...</button></div><p class="small muted" id="importMsg"></p></div>`;
   h += `<div class="card"><h3>Master resume</h3><p class="${s.master_ok ? 'ok' : 'bad'}" style="white-space:pre-wrap">${s.master_ok ? 'OK: ' : ''}${esc(s.master)}</p>
-    <button onclick="api('open_master')">Open master.yaml</button> <span class="muted small">Edit it in your editor; the app reads it on every run.</span></div>`;
+    <button onclick="document.querySelector('#nav [data-tab=master]').click()">Edit in the Master tab</button> <button onclick="api('open_master')">Open master.yaml</button> <span class="muted small">The app reads it on every run.</span></div>`;
   h += `<div class="card"><h3>PDF engine</h3><p class="${s.browser ? 'ok' : 'warn'}">${s.browser ? 'Using ' + esc(s.browser) : 'No Edge or Chrome found: PDFs need WeasyPrint.'}</p></div>`;
   if (s.local) {
     h += `<div class="card"><h3>Ollama</h3>`;
@@ -260,7 +569,11 @@ async function loadSetup(){
         s.recommended.map(m => { const have = o.models.some(x => x === m.name || x === m.name + ':latest');
           return `<tr><td>${esc(m.name)}${m.name === s.model ? ' <span class="pill">selected</span>' : ''}</td><td>${m.size}</td><td class="small">${esc(m.why)}</td>
             <td>${have ? '<span class="ok">Downloaded</span>' : `<button onclick="pull('${m.name}', this)">Download</button>`}</td></tr>`; }).join('') + '</table>';
-      if (!o.models.some(x => x === s.model || x === s.model + ':latest')) h += `<p class="warn small">The selected model (${esc(s.model)}) is not downloaded yet.</p>`;
+      const haveLong = o.models.some(x => x === s.long_context_model || x === s.long_context_model + ':latest');
+      const haveMain = o.models.some(x => x === s.main_model || x === s.main_model + ':latest');
+      h += `<p class="small" style="margin-top:10px"><b>Thorough mode</b> uses ${esc(s.long_context_model)}: the same model with a 16k context, so it can think in its analysis. No download.
+        ${haveLong ? '<span class="ok">Ready.</span>' : haveMain ? '<button onclick="makeLong(this)">Create it</button>' : '<span class="muted">Download the main model first.</span>'}</p>`;
+      if (!o.models.some(x => x === s.model || x === s.model + ':latest')) h += `<p class="warn small">The selected model (${esc(s.model)}) is not downloaded yet${s.model === s.long_context_model ? ' (create it above)' : ''}.</p>`;
       h += `<div class="row" style="margin-top:8px"><span id="pullMsg" class="small muted"></span><div class="bar" id="pullBar" style="display:none"><i></i></div></div></div>`;
     }
   }
@@ -273,21 +586,56 @@ async function pull(name, btn){ btn.disabled = true; $('pullBar').style.display 
     $('pullMsg').textContent = `${name}: ${p.status}` + (p.total ? ` (${(p.done/1e9).toFixed(1)} of ${(p.total/1e9).toFixed(1)} GB)` : '');
     $('pullBar').firstChild.style.width = p.total ? (100 * p.done / p.total) + '%' : '0'; });
   if (j.error) alert(j.error); loadSetup(); }
+async function makeLong(btn){ btn.disabled = true; btn.textContent = 'Creating...';
+  const j = await follow(await api('ollama_long_context')); if (j.error) alert(j.error); loadSetup(); }
 async function importData(){ const r = await api('import_data');
   $('importMsg').textContent = r.copied?.length ? `Copied ${r.copied.join(', ')} (earlier files kept as .bak).` : 'Nothing copied: pick the folder that holds master.yaml.';
   refreshState(); }
 
 // ---------------------------------------------------------------- settings
-async function loadSettings(){
-  const s = await api('get_settings'); $('settingsFile').textContent = s.file;
-  $('settingsForm').innerHTML = s.fields.map(f => {
-    let input;
-    if (f.kind.startsWith('choice:')) input = `<select data-key="${f.key}">${f.kind.slice(7).split(',').map(o => `<option value="${o}" ${o === f.value ? 'selected' : ''}>${o || '(default)'}</option>`).join('')}</select>`;
-    else if (f.kind === 'bool') input = `<select data-key="${f.key}"><option value="" ${!f.value ? 'selected' : ''}>off</option><option value="true" ${['true','1','yes','on'].includes(f.value) ? 'selected' : ''}>on</option></select>`;
-    else input = `<input data-key="${f.key}" type="${f.kind === 'secret' ? 'password' : f.kind === 'int' ? 'number' : 'text'}" value="${esc(f.value)}">`;
-    return `<div class="field"><label><b>${esc(f.label)}</b><br><span class="muted small">${esc(f.key)}</span></label><div>${input}<div class="muted small">${esc(f.help)}</div></div></div>`;
-  }).join('');
+// Two layers: the simple choices (engine, quality) set several advanced fields at once;
+// the advanced fields are the actual settings and are what gets saved.
+let SET = null;
+function fieldHtml(f){
+  let input;
+  if (f.kind.startsWith('choice:')) input = `<select data-key="${f.key}">${f.kind.slice(7).split(',').map(o => `<option value="${o}" ${o === f.value ? 'selected' : ''}>${o || '(default)'}</option>`).join('')}</select>`;
+  else if (f.kind === 'bool') input = `<select data-key="${f.key}"><option value="" ${!f.value ? 'selected' : ''}>off</option><option value="true" ${['true','1','yes','on'].includes(f.value) ? 'selected' : ''}>on</option></select>`;
+  else input = `<input data-key="${f.key}" type="${f.kind === 'secret' ? 'password' : f.kind === 'int' ? 'number' : 'text'}" value="${esc(f.value)}">`;
+  return `<div class="field"><label><b>${esc(f.label)}</b><br><span class="muted small">${esc(f.key)}</span></label><div>${input}<div class="muted small">${esc(f.help)}</div></div></div>`;
 }
+const fieldVal = k => document.querySelector(`#settingsForm [data-key="${k}"]`)?.value ?? '';
+function currentPreset(group){
+  for (const [name, keys] of Object.entries(SET.presets[group]))
+    if (Object.entries(keys).every(([k, v]) => (fieldVal(k) || '') === v)) return name;
+  return 'custom';
+}
+function drawPresets(){
+  for (const group of ['engine', 'quality']) {
+    const cur = currentPreset(group), names = Object.keys(SET.presets[group]);
+    $('preset-' + group).innerHTML = [...names, ...(cur === 'custom' ? ['custom'] : [])].map(n =>
+      `<label class="${n === cur ? 'on' : ''}"><input type="radio" name="p-${group}" value="${n}" ${n === cur ? 'checked' : ''} ${n === 'custom' ? 'disabled' : ''}>
+       <span><b>${n[0].toUpperCase() + n.slice(1)}</b><br><span class="muted small">${esc(SET.preset_info[n] || 'Your own combination of the advanced settings below.')}</span></span></label>`).join('');
+  }
+  $('preset-quality').closest('.field').style.display = fieldVal('CV_LLM_BASE_URL') ? '' : 'none';  // presets are for the local engine
+}
+async function loadSettings(){
+  SET = await api('get_settings'); $('settingsFile').textContent = SET.file;
+  const simple = SET.fields.filter(f => f.level === 'simple'), adv = SET.fields.filter(f => f.level !== 'simple');
+  $('settingsForm').innerHTML =
+    `<div class="field"><label><b>Engine</b><br><span class="muted small">where the model runs</span></label><div class="preset" id="preset-engine"></div></div>
+     <div class="field"><label><b>Quality</b><br><span class="muted small">speed against care</span></label><div class="preset" id="preset-quality"></div></div>` +
+    simple.map(fieldHtml).join('') +
+    `<details class="adv"><summary>Advanced: model names and exact tuning</summary>${adv.map(fieldHtml).join('')}</details>`;
+  drawPresets();
+}
+$('settingsForm').addEventListener('change', e => {
+  const x = e.target;
+  if (x.name?.startsWith('p-')) {  // a simple choice fills in the advanced fields it stands for
+    const keys = SET.presets[x.name.slice(2)][x.value];
+    for (const [k, v] of Object.entries(keys)) { const f = document.querySelector(`#settingsForm [data-key="${k}"]`); if (f) f.value = v; }
+  }
+  drawPresets(); $('settingsMsg').textContent = 'Not saved yet.';
+});
 $('saveSettings').onclick = async () => { const v = {}; document.querySelectorAll('#settingsForm [data-key]').forEach(e => v[e.dataset.key] = e.value);
   await api('save_settings', v); $('settingsMsg').textContent = 'Saved.'; refreshState(); };
 

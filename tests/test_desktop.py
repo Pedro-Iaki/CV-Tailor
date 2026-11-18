@@ -63,7 +63,7 @@ def test_dry_run_and_errors(desk, job_text):
 def test_state_and_rating(desk, job_text):
     s = desk.get_state()
     assert s["master_ok"] and s["local"] is False and s["ollama"] is None
-    assert len(s["recommended"]) == 3
+    assert [m["name"] for m in s["recommended"]] == ["qwen3.5:35b-a3b", "bge-m3"]
     wait(desk, desk.new_cv(job_text, {}))
     [item] = desk.rate_items()
     assert item["key"] == "app:1" and item["label"] == ""
@@ -138,3 +138,72 @@ def test_ollama_pull_progress(monkeypatch):
                         lambda req, timeout=None: io.BytesIO(b'{"error":"model not found"}\n'))
     with pytest.raises(RuntimeError, match="not found"):
         ollama_setup.pull(None, "nope", lambda *a: None)
+
+
+# ---------------------------------------------------------------- Master tab (builder)
+
+@pytest.fixture
+def bdesk(make_ctx, tmp_path, selection_dict):
+    import dataclasses
+    import shutil
+    from cvtailor.pipeline import Context
+    from tests.conftest import EXAMPLE_MASTER
+    (tmp_path / "data").mkdir(exist_ok=True)
+    mp = tmp_path / "data" / "master.yaml"
+    shutil.copy(EXAMPLE_MASTER, mp)
+    client, renderer = FakeClient(selections=[selection_dict] * 3), FakeRenderer()
+
+    def factory():
+        base = make_ctx(client=client, renderer=renderer)
+        ctx = Context(dataclasses.replace(base.cfg, master_path=mp))
+        ctx.llm, ctx.renderer = base.llm, renderer
+        return ctx
+    return Api(factory)
+
+
+def test_builder_state_preview_and_fit(bdesk, selection_dict):
+    st = bdesk.builder_state()
+    assert st["master"]["profile"]["name"] == "Ana Souza" and st["undo"] == 0 and isinstance(st["conflicts"], dict)
+    r = bdesk.builder_preview(selection_dict, "en")
+    assert r["errors"] == [] and "Ana Souza" in r["html"]
+    bad = {**selection_dict, "summary_id": "nope"}
+    assert any("nope" in e for e in bdesk.builder_preview(bad, "en")["errors"])
+    j = wait(bdesk, bdesk.builder_fit(selection_dict, "pt"))
+    assert j["error"] is None and j["result"]["pages"] >= 1
+
+
+def test_builder_edit_undo_and_delete_confirm(bdesk, selection_dict, job_text):
+    r = bdesk.builder_edit("update", {"id": "acme-delta-02", "changes": {"en": "Migrated 40 tables."}})
+    assert r["ok"] and r["undo"] == 1
+    bullet = next(b for b in r["master"]["jobs"][0]["bullets"] if b["id"] == "acme-delta-02")
+    assert bullet["en"] == "Migrated 40 tables."
+    bad = bdesk.builder_edit("update", {"id": "acme-delta-02", "changes": {"tags": ""}})
+    assert not bad["ok"] and bad["errors"]
+    r = bdesk.builder_edit("undo", {})
+    assert r["ok"] and r["undo"] == 0
+    # an item used by an application asks first
+    assert wait(bdesk, bdesk.new_cv(job_text, {"lang": "en"}))["error"] is None
+    r = bdesk.builder_edit("delete", {"id": "acme-delta-02"})
+    assert r == {"ok": False, "confirm": [1]}
+    r = bdesk.builder_edit("delete", {"id": "acme-delta-02", "force": True})
+    assert r["ok"] and "acme-delta-02" not in {b["id"] for b in r["master"]["jobs"][0]["bullets"]}
+    loaded = bdesk.builder_from_app(1)
+    assert loaded["selection"]["summary_id"] == selection_dict["summary_id"]
+
+
+def test_settings_have_layers_and_presets(tmp_path, monkeypatch):
+    monkeypatch.setenv("CV_PORTABLE", "1")
+    monkeypatch.setenv("CV_APP_HOME", str(tmp_path))
+    ensure_portable_layout()
+    s = Api().get_settings()
+    levels = {f["key"]: f["level"] for f in s["fields"]}
+    assert levels["CV_MODEL"] == "advanced" and levels["CV_PDF_NAME"] == "simple"
+    assert set(s["presets"]["quality"]) == {"fast", "careful", "thorough"}
+    assert s["presets"]["quality"]["thorough"]["CV_LLM_CAREFUL_REASONING"] == "default"
+
+
+def test_careful_reasoning_default_means_model_default(monkeypatch):
+    monkeypatch.setenv("CV_LLM_CAREFUL_REASONING", "default")
+    assert config.Config.from_env().careful_reasoning == ""
+    monkeypatch.delenv("CV_LLM_CAREFUL_REASONING")
+    assert config.Config.from_env().careful_reasoning is None

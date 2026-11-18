@@ -212,6 +212,9 @@ See [examples/master.example.yaml](examples/master.example.yaml). Besides summar
 - `description_alts` on a job or project: other versions of its description, each with an id and tags. A description's `alt_of` can list bullets of the same entry that it already covers.
 - Skill categories with `alt_of` form alternative layouts of the same skills (for example "by area" vs. one "Hands-on" line plus a "Working knowledge" line). A skill may repeat between a category and its alternatives. Two categories that replace the same one can be used together, as halves of one layout.
 - `skills.languages`: spoken languages, always rendered last, one line per category.
+- `profile.headline_alts`: other lines under the name (each with `id`, `en`, `pt`, optional `tags`), such as "Analytics Engineer". The selector keeps the default unless the job's own title is one of them. A picked option wins over a summary's headline.
+- `only_for_tags` on a project: the selector only sees the project when the job description mentions one of these tags (for example an AI project only for postings that mention AI). A manual selection can still include it.
+- `required: true` on a skill category: it must be listed unless one of its alternatives is (for example the Working knowledge line of a by-level layout). `min_items: N`: when listed, it shows at least N of its items. Local models get both in the grammar; validation checks them for every model.
 
 Untranslated text is not allowed: every alternative needs `en` and `pt`.
 
@@ -242,7 +245,7 @@ Any short text can be one string used in both languages, or an `{en, pt}` pair. 
 | `CV_LLM_TIMEOUT` | `600` | seconds per local call |
 | `CV_LLM_REASONING` | | local models only: sent as `reasoning_effort` (`low`, `medium`, `high`). `low` keeps thinking models fast and inside the context window |
 | `CV_LLM_MODE` | | `careful`: always use careful mode (same as `new --careful`) |
-| `CV_LLM_CAREFUL_REASONING` | | careful mode, local models: reasoning for the analysis and review passes. Empty value = the model's default (thinking on for Qwen) |
+| `CV_LLM_CAREFUL_REASONING` | | careful mode, local models: reasoning for the analysis and review passes. `default` (or an empty value) = the model's default (thinking on for Qwen) |
 | `CV_LLM_EMBED_MODEL` | | careful mode, Ollama only: embedding model (e.g. `bge-m3`) for "closest posting line" hints |
 | `CV_LLM_MAX_TOKENS` | `4096` | local models only: output-token cap per call, thinking included. A model that thinks past it is stopped and retried once with a request to keep it short. Keep it at most the server's context minus about 4.5k tokens for the prompt |
 | `ROUTE_THRESHOLD` | `0.6` | |
@@ -279,6 +282,8 @@ Notes:
 ### Desktop app (portable)
 
 `build_portable.ps1` builds `dist\CV Tailor\`, about 56 MB (a 32 MB zip): run `CV Tailor.exe`. It opens a window (WebView2, built into Windows 10 and 11) with tabs for **New CV** (paste a posting, fast or careful, live progress, preview, open the PDF), **Applications** (status, preview, PDFs in either language, re-run), **Rate**, **Setup** and **Settings**. The app is portable: everything lives next to the exe in `Data\` (`settings.env`, `master.yaml`, `applications.db`, `variants\`, the WebView2 cache) and `Output\`, and nothing is written to the registry or your user profile. Move the folder and it keeps working. To update, replace the exe and `_internal\`.
+
+The **Master** tab shows the master as a CV builder. Tick items to build a CV by hand and watch the preview: summary, headline, bullets and their versions, projects, descriptions, skill lines and single skills. Check the page fit, save a PDF, or save the result into an application. The Edit, ↑ ↓, ✕, **+ bullet** and **+ version** buttons change `master.yaml` itself. Each change is validated like `validate-master` before it is written, comments and layout are kept, and **Undo** restores earlier versions, which are kept in `Data\master-history\`. **Settings** has two layers. The simple one has Engine (this PC or the Anthropic API), Quality (Fast, about 1-3 minutes; Careful, 6-10; Thorough, about 15, with the model thinking in its analysis) and a few general options. The advanced one has the model names and exact tuning that those choices fill in. Thorough mode needs a 16k-context name of the main model, which Setup creates in one click with no download.
 
 On first start the **Setup** tab checks Ollama: it starts it if it's installed but stopped, or offers to install it (winget or the official download page). It then offers the recommended models with download progress, and can import an existing `data` folder. PDFs come from headless Edge (Chrome elsewhere), so no GTK or WeasyPrint is needed; set `CV_PDF_ENGINE=weasyprint` to use WeasyPrint instead. From source: `.venv\Scripts\python cv_tailor_app.py` (uses `data\` and `.env` as usual).
 
