@@ -28,7 +28,11 @@ th{font-size:12px;color:var(--muted);font-weight:600}tr.sel td{background:var(--
 .pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;border:1px solid var(--line)}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
 .bar{height:6px;background:var(--soft);border-radius:99px;overflow:hidden;width:220px}.bar i{display:block;height:100%;background:var(--accent);width:0}
-.rate{display:grid;grid-template-columns:260px 1fr;gap:14px;height:100%}
+.rate{display:grid;grid-template-columns:300px 1fr;gap:14px;height:100%}
+.rateside{display:flex;flex-direction:column;gap:10px;min-height:0;height:100%}
+.rateside .list{flex:1 1 0;min-height:120px}
+.notebox{display:flex;flex-direction:column;gap:6px;flex:0 0 auto}
+.notebox textarea{height:240px;min-height:120px;box-sizing:border-box}
 .list{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:auto}
 .item{display:flex;justify-content:space-between;gap:8px;padding:8px 12px;border-top:1px solid var(--line);cursor:pointer}
 .item:first-child{border-top:0}.item.on{background:var(--soft);box-shadow:inset 3px 0 var(--accent)}
@@ -75,11 +79,15 @@ pre.job{margin:0;white-space:pre-wrap;overflow:auto;background:var(--panel);bord
 </div></section>
 
 <section class="tab" id="tab-rate"><div class="rate">
- <div class="list" id="rateList"></div>
+ <div class="rateside">
+  <div class="row"><b class="grow">CVs</b><button id="rateSummary" title="Mean rating per setup">Summary</button></div>
+  <div class="list" id="rateList"></div>
+  <div class="notebox"><label for="rateNote"><b>Note</b> <span class="muted small">(optional; saved with the rating, and as you type once a CV is rated)</span></label>
+   <textarea id="rateNote" placeholder="What works, what is wrong, what is missing..."></textarea></div>
+ </div>
  <div>
   <div class="card" style="margin-bottom:12px"><div class="row"><b class="grow" id="rateTitle">Rate CVs 1 to 5</b>
-   <button id="rateLang">EN / PT</button><span class="stars" id="stars"></span>
-   <input type="text" id="rateNote" placeholder="Note (optional)" style="min-width:200px"><button id="rateSummary">Summary</button></div>
+   <button id="rateLang">EN / PT</button><span class="stars" id="stars"></span></div>
    <div class="muted small" id="rateLabel">Keys: 1-5 rate and move on, L switches language. The setup behind a CV shows after you rate it. Extra CVs: put .jsonl files in Data/candidates.</div></div>
   <div class="panes" id="ratePanes"><iframe id="rateCv" title="CV"></iframe><pre class="job" id="rateJob"></pre></div>
   <div class="card" id="rateSummaryCard" style="display:none"></div>
