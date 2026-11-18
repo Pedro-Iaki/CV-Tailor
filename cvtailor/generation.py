@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -520,22 +521,17 @@ def check_version(draft: dict[str, Any], sources: list[Any]) -> Optional[dict[st
 
 
 def drafting_llm(ctx: Context) -> tuple[Any, str, Optional[str], int]:
-    """The best setup available for drafting: (llm, label, reasoning, max_tokens).
-    Local: the 16k-context model with thinking on when it exists (short prompt, quality
-    matters more than speed), else the configured model and reasoning."""
+    """(llm, label, reasoning, max_tokens) for drafting versions: one short call with
+    no thinking (a few sentences don't need it, and thinking costs minutes on local
+    hardware), on the model already configured for tailoring, so Ollama doesn't have
+    to swap models."""
     cfg = ctx.cfg
     if not cfg.llm_base_url:
-        return ctx.get_llm(), cfg.model, None, 8000
-    from . import ollama_setup
+        return ctx.get_llm(), cfg.model, None, 4000
     from .llm import LLM
     from .local_llm import LocalClient
-    models = ollama_setup.status(cfg.llm_base_url).get("models") or []
     client = LocalClient(cfg.llm_base_url, cfg.llm_api_key, cfg.llm_timeout)
-    if ollama_setup.has_model(models, ollama_setup.LONG_CONTEXT_MODEL):
-        model = ollama_setup.LONG_CONTEXT_MODEL
-        return LLM(model, None, client=client), f"{model}, thinking", "", 10000
-    return (LLM(cfg.model, None, client=client, max_output=cfg.llm_max_tokens),
-            f"{cfg.model}, reasoning {cfg.llm_reasoning or 'default'}", cfg.llm_reasoning, cfg.llm_max_tokens)
+    return LLM(cfg.model, None, client=client), cfg.model, "none", 1500
 
 
 def draft_versions(ctx: Context, item_id: str, note: str = "", previous: Optional[list[dict]] = None,
@@ -560,10 +556,12 @@ def draft_versions(ctx: Context, item_id: str, note: str = "", previous: Optiona
     ])
     llm, label, reasoning, max_tokens = drafting_llm(ctx)
     io.out(f"Drafting with {label}...")
+    started = time.monotonic()
     try:
         raws, usage = llm.versions(context, n=n, reasoning=reasoning, max_tokens=max_tokens)
     except LLMError as e:
         raise GenerationError(str(e)) from None
+    io.out(f"{usage.output_tokens} tokens in {time.monotonic() - started:.0f} s")
     sources = [item, *versions] + (others if note.strip() else [])
     seen = {item.en, *(v.en for v in versions), *(d["en"] for d in shown)}
     out = []

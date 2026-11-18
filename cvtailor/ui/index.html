@@ -265,6 +265,17 @@ function normalizeSel(){  // drop ids the master no longer has (after a delete o
     s.skill_items[cid] = list.filter(x => own.includes(x)); if (!s.skill_items[cid].length) delete s.skill_items[cid];
   }
 }
+// Display order: each original followed by its versions (the file may keep versions
+// elsewhere, e.g. at the end of the list). Picked bullets are ordered the same way.
+function grouped(list){
+  const ids = new Set(list.map(x => x.id)), out = [], placed = new Set();
+  const root = x => (x.alt_of || []).find(a => ids.has(a));
+  for (const x of list) if (!root(x)) {
+    out.push(x); placed.add(x.id);
+    for (const v of list) if (root(v) === x.id) { out.push(v); placed.add(v.id); }
+  }
+  return [...out, ...list.filter(x => !placed.has(x.id))];
+}
 function inMasterOrder(list, ids){ const pos = new Map(list.map((x, i) => [x, i])); return [...new Set(ids)].sort((a, b) => (pos.get(a) ?? 1e9) - (pos.get(b) ?? 1e9)); }
 
 async function loadBuilder(){
@@ -295,7 +306,7 @@ function acts(id, opts = {}){
   if (opts.fact) return '<span class="badge" title="An approved draft from the facts table; edit it with apply.py">approved draft</span>';
   return `<div class="acts">${opts.noEdit ? '' : `<button class="mini" data-act="edit" data-id="${esc(id)}">Edit</button>`}
     ${opts.version ? `<button class="mini" data-act="version" data-id="${esc(id)}" title="Add another version of this item">+ version</button>` : ''}
-    <button class="mini" data-act="up" data-id="${esc(id)}">↑</button><button class="mini" data-act="down" data-id="${esc(id)}">↓</button>
+    ${opts.noMove ? '' : `<button class="mini" data-act="up" data-id="${esc(id)}">↑</button><button class="mini" data-act="down" data-id="${esc(id)}">↓</button>`}
     ${opts.noDel ? '' : `<button class="mini" data-act="del" data-id="${esc(id)}">✕</button>`}</div>`;
 }
 function textForm(it, extra = ''){
@@ -307,10 +318,11 @@ function textForm(it, extra = ''){
 }
 function itemRow(it, pick, opts = {}){
   if (B.editing === it.id) return textForm(it);
-  const alt = (it.alt_of || []).length, tags = (it.tags || []).join(', ');
+  const alt = (it.alt_of || []).length && !opts.desc, tags = (it.tags || []).join(', ');
+  const covers = opts.desc && (it.alt_of || []).length ? `<span class="badge" title="This description already says what these bullets say, so a CV never shows both">covers ${esc(it.alt_of.join(', '))}</span>` : '';
   return `<div class="bi ${alt ? 'ver' : ''}">${pick}
-    <div class="txt">${esc(T(it))}${alt ? `<span class="badge" title="Another wording of ${esc(it.alt_of.join(' + '))}: a CV shows at most one of them">version of ${esc(it.alt_of.join(', '))}</span>` : ''}
-      <div class="tagl">${esc(it.id)}${tags ? ' · ' + esc(tags) : ''}</div></div>${acts(it.id, {...opts, fact: !!it.origin})}</div>` +
+    <div class="txt">${esc(T(it))}${alt ? `<span class="badge" title="Another wording of ${esc(it.alt_of.join(' + '))}: a CV shows at most one of them">version of ${esc(it.alt_of.join(', '))}</span>` : ''}${covers}
+      <div class="tagl">${esc(it.id)}${tags ? ' · ' + esc(tags) : ''}</div></div>${acts(it.id, {...opts, fact: !!it.origin, noMove: opts.noMove || alt})}</div>` +
     (B.ver && B.editing === 'ver:' + it.id ? versionPanel() : '');
 }
 // "+ version": write it yourself, or let the local model draft some (with an optional
@@ -350,7 +362,7 @@ async function generateVersions(){
 }
 function bulletRows(o, kind){
   const chosen = new Set(B.sel.bullets[o.id] || []);
-  const rows = o.bullets.map(b => itemRow(b, `<input type="checkbox" data-pick="bullet" data-owner="${esc(o.id)}" value="${esc(b.id)}" ${chosen.has(b.id) ? 'checked' : ''}>`,
+  const rows = grouped(o.bullets).map(b => itemRow(b, `<input type="checkbox" data-pick="bullet" data-owner="${esc(o.id)}" value="${esc(b.id)}" ${chosen.has(b.id) ? 'checked' : ''}>`,
                                             {version: true})).join('');
   const adding = B.editing === 'new:' + o.id ? textForm({id: 'new:' + o.id, tags: o.tags || []}) : '';
   return rows + adding + `<div style="padding:4px 0 6px 30px"><button class="mini" data-act="addbullet" data-id="${esc(o.id)}">+ bullet</button>
@@ -363,7 +375,7 @@ function descRows(o){
   const name = `desc-${esc(o.id)}`;
   let h = B.editing === def.id ? descForm(o) : `<div class="bi"><input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="default" ${cur === 'default' ? 'checked' : ''}>
     <div class="txt"><i>${esc(T(o.description))}</i><div class="tagl">default description</div></div>${acts(def.id, {noDel: true})}</div>`;
-  h += (o.description_alts || []).map(d => itemRow(d, `<input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="${esc(d.id)}" ${cur === d.id ? 'checked' : ''}>`)).join('');
+  h += (o.description_alts || []).map(d => itemRow(d, `<input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="${esc(d.id)}" ${cur === d.id ? 'checked' : ''}>`, {desc: true})).join('');
   return h;
 }
 function descForm(o){
@@ -394,7 +406,7 @@ function drawBuilder(){
       : itemRow(x, `<input type="radio" name="hl" data-pick="headline" value="${esc(x.id)}" ${s.headline_id === x.id ? 'checked' : ''}>`)).join('') +
     (B.editing === 'new:headline' ? textForm({id: 'new:headline', tags: []}) : '') + `</div></div>`;
   h += `<div class="bsec"><h3><span>Summary</span><button class="mini" data-act="addsummary">+ summary</button></h3><div class="bent">` +
-    m.summaries.map(x => itemRow(x, `<input type="radio" name="sum" data-pick="summary" value="${esc(x.id)}" ${s.summary_id === x.id ? 'checked' : ''}>`, {version: true})).join('') +
+    grouped(m.summaries).map(x => itemRow(x, `<input type="radio" name="sum" data-pick="summary" value="${esc(x.id)}" ${s.summary_id === x.id ? 'checked' : ''}>`, {version: true})).join('') +
     (B.editing === 'new:summary' ? textForm({id: 'new:summary', tags: []}) : '') + `</div></div>`;
   for (const sec of m.layout.sections) {
     if (sec === 'experience') h += `<div class="bsec"><h3><span>Experience</span><span class="muted small">every job is always shown</span></h3>` + m.jobs.map(j =>
@@ -439,7 +451,7 @@ $('bLeft').addEventListener('change', e => {
   if (kind === 'headline') s.headline_id = id === 'default' ? null : id;
   if (kind === 'bullet') {
     const o = findOwner(x.dataset.owner), list = s.bullets[o.id] || [];
-    if (x.checked) { dropConflicts(id); s.bullets[o.id] = inMasterOrder(o.bullets.map(b => b.id), [...(s.bullets[o.id] || []), id]);
+    if (x.checked) { dropConflicts(id); s.bullets[o.id] = inMasterOrder(grouped(o.bullets).map(b => b.id), [...(s.bullets[o.id] || []), id]);
       if (B.m.projects.some(p => p.id === o.id) && !s.project_ids.includes(o.id)) s.project_ids = inMasterOrder(B.m.projects.map(p => p.id), [...s.project_ids, o.id]); }
     else s.bullets[o.id] = list.filter(b => b !== id);
   }
@@ -485,7 +497,15 @@ $('bLeft').addEventListener('click', async e => {
   if (act === 'addcat') { B.editing = 'new:cat:' + id; drawBuilder(); return; }
   if (act === 'up' || act === 'down') {
     if (id.endsWith('#description')) return;
-    await edit('move', {id, delta: act === 'up' ? -1 : 1}); return;
+    const list = [B.m.summaries, ...owners().map(o => o.bullets)].find(l => l.some(x => x.id === id));
+    let delta = act === 'up' ? -1 : 1;
+    if (list) {  // jump past the neighbouring original (versions are shown under theirs)
+      const ids = new Set(list.map(x => x.id)), orig = list.filter(x => !(x.alt_of || []).some(a => ids.has(a)));
+      const k = orig.findIndex(x => x.id === id), nb = orig[k + (act === 'up' ? -1 : 1)];
+      if (k < 0 || !nb) return;
+      delta = list.findIndex(x => x.id === nb.id) - list.findIndex(x => x.id === id);
+    }
+    await edit('move', {id, delta}); return;
   }
   if (act === 'del') { if (confirm(`Delete ${id} from master.yaml? (Undo can bring it back.)`)) await edit('delete', {id}); return; }
   if (act === 'version') {  // open the version panel: the form starts as a copy of the item
