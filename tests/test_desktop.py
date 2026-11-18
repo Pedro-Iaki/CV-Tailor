@@ -71,6 +71,17 @@ def test_state_and_rating(desk, job_text):
     assert desk.rate_summary()[0]["mean"] == 4.0
 
 
+def test_broken_candidate_file_is_reported_not_fatal(desk, job_text):
+    wait(desk, desk.new_cv(job_text, {}))
+    cand_dir = desk._ctx().cfg.data_dir / "candidates"
+    cand_dir.mkdir(parents=True, exist_ok=True)
+    (cand_dir / "bad.jsonl").write_text('{"key": "x", "job_text": "j", "selection": {}, '
+                                        '"master_path": "missing.yaml"}\n', encoding="utf-8")
+    assert [i["key"] for i in desk.rate_items()] == ["app:1"]
+    info = desk.rate_info()
+    assert info["count"] == 1 and len(info["problems"]) == 1 and "bad.jsonl" in info["problems"][0]
+
+
 def test_portable_layout_and_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("CV_PORTABLE", "1")
     monkeypatch.setenv("CV_APP_HOME", str(tmp_path))

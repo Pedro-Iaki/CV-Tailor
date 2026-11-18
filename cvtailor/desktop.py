@@ -104,6 +104,7 @@ class Job:
 class Api:
     def __init__(self, ctx_factory: Optional[Callable[[], Context]] = None) -> None:
         self._jobs: dict[str, Job] = {}
+        self._rate_problems: list[str] = []
         # Private on purpose: pywebview exposes every public attribute of js_api to the
         # page and walks it on the UI thread; walking the Window object hangs the app.
         self._window: Any = None  # set by main(); used for file dialogs
@@ -236,12 +237,23 @@ class Api:
         ctx = self._ctx()
         cands = application_candidates(ctx.db(), ctx.master)
         cand_dir = ctx.cfg.data_dir / "candidates"
+        self._rate_problems = []
         for f in sorted(cand_dir.glob("*.jsonl")) if cand_dir.exists() else []:
-            cands += file_candidates(f, ctx.master)
+            try:  # one broken file must not hide everything else
+                cands += file_candidates(f, ctx.master)
+            except Exception as e:  # noqa: BLE001 - reported on the Rate tab
+                self._rate_problems.append(f"{f.name}: {e}")
         return RatingApp(cands, RatingStore(ctx.cfg.db_path))
 
     def rate_items(self) -> list[dict]:
         return self._rating_app().items()
+
+    def rate_info(self) -> dict:
+        """Where rateable CVs come from, and files that could not be read."""
+        ctx = self._ctx()
+        items = self._rating_app().items()
+        return {"count": len(items), "candidates_dir": str(ctx.cfg.data_dir / "candidates"),
+                "problems": list(self._rate_problems)}
 
     def rate_cv(self, key: str, lang: str) -> str:
         return self._rating_app().cv_html(key, lang)

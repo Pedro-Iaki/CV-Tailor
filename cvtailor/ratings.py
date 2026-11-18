@@ -63,7 +63,9 @@ def file_candidates(path: Path, default_master: Master) -> list[Candidate]:
         m = default_master
         if d.get("master_path"):
             mp = str((path.parent / d["master_path"]).resolve())
-            m = masters.setdefault(mp, load_master(mp))
+            if mp not in masters:
+                masters[mp] = load_master(mp)
+            m = masters[mp]
         out.append(Candidate(
             key=d["key"], title=d.get("title") or d["job_text"].strip().splitlines()[0][:80],
             job_text=d["job_text"], selection=Selection.model_validate(d["selection"]), master=m,

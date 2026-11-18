@@ -179,7 +179,9 @@ async function regenApp(id){
 // ---------------------------------------------------------------- rate
 let items = [], cur = null, rlang = null, picked = null;
 async function loadRate(){ items = await api('rate_items'); drawRateList(); if (!cur && items.length) showRate((items.find(i => !i.rating) || items[0]).key);
-  if (!items.length) $('rateTitle').textContent = 'Nothing to rate yet: tailor a CV, or put candidate .jsonl files in Data/candidates.'; }
+  const info = await api('rate_info');
+  if (info.problems.length) alert('Some candidate files could not be read:\n\n' + info.problems.join('\n\n'));
+  if (!items.length) $('rateTitle').textContent = 'Nothing to rate yet. CVs appear here once you tailor one (New CV), or put candidate .jsonl files (with the master they were made from) in ' + info.candidates_dir; }
 function drawRateList(){ $('rateList').innerHTML = items.map(i => `<div class="item ${i.key === cur ? 'on' : ''}" data-key="${esc(i.key)}"><span class="t">#${i.n} ${esc(i.title)}</span><b class="ok">${i.rating || ''}</b></div>`).join('');
   document.querySelectorAll('#rateList .item').forEach(d => d.onclick = () => showRate(d.dataset.key)); }
 async function showRate(key){
