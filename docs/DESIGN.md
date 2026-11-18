@@ -134,6 +134,8 @@ Where approved text goes sets its trust level:
 
 Every draft, reply and comment is also kept in a `proposals` table as an audit trail.
 
+**Drafted versions in the Master tab.** "+ version" on a bullet or summary can also ask the model for up to 3 alternative wordings, guided by an optional note from the user, with a Regenerate button that asks for different ones. It uses the best local setup available: the 16k-context model with thinking on when it exists, otherwise the configured model. A draft only fills the edit form; nothing is written until the user saves the exact, possibly edited, text as an `alt_of` version in `master.yaml`, which makes it text the user wrote. Code flags each draft that contains numbers or names (capitalized words that don't start a sentence) missing from the item, its versions and, when the note asks to bring something in, the other items of the same entry. It catches added tools and figures, not vaguer embellishment such as "production-ready", so the user still reads every word. It is gated by the same `CV_ALLOW_GENERATION` switch, which the panel can turn on after a confirmation.
+
 ## Data model
 
 SQLite, with numbered migrations tracked by `PRAGMA user_version`.

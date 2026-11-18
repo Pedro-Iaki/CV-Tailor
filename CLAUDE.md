@@ -12,7 +12,7 @@ Trust levels, highest first:
 3. The `unsafe_items` table: approved drafts that make **new claims**. They are never merged into the master, so they can't be selected or rendered. The only way out is `apply.py unsafe promote` in a terminal. There is deliberately **no MCP tool** for promotion; do not add one.
 
 Implementation rules:
-- Generation is opt-in (`CV_ALLOW_GENERATION`, off by default) and lives only in `cvtailor/generation.py`. Every draft is reviewed one by one. `y, <comment>` produces a revision that is shown again; it is never stored directly.
+- Generation is opt-in (`CV_ALLOW_GENERATION`, off by default) and lives only in `cvtailor/generation.py`. Every draft is reviewed one by one. `y, <comment>` produces a revision that is shown again; it is never stored directly. The Master tab's drafted versions (`draft_versions`) only fill the edit form; the user saves the exact text themselves, and drafts with numbers or names missing from the sources are flagged.
 - The template receives only a `RenderInput` (master + facts, validated selection, lang, i18n). Never add meta, suggestions, job tags, proposals or unsafe items to it.
 - To change a CV, change the selection (ids), go through the proposal review, or suggest that the user edit their master file. Never write experience the user didn't state.
 

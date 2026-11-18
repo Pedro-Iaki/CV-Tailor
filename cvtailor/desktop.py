@@ -312,7 +312,8 @@ class Api:
             return {"error": "\n".join(getattr(e, "errors", None) or [str(e)])}
         return {"master": m.model_dump(mode="json"),
                 "conflicts": {k: sorted(v) for k, v in alt_conflicts(m).items()},
-                "apps": self.list_apps(), "undo": self._editor().history_count()}
+                "apps": self.list_apps(), "undo": self._editor().history_count(),
+                "allow_generation": ctx.cfg.allow_generation}
 
     def _selection(self, data: dict):
         from .schema import Selection
@@ -383,6 +384,15 @@ class Api:
     def _apps_using(self, id_: str) -> list[int]:
         rows = db.list_applications(self._ctx().db())
         return [r["id"] for r in rows if id_ in json.dumps(r.get("selection") or {})]
+
+    def builder_draft_versions(self, item_id: str, note: str = "", previous: Optional[list] = None) -> str:
+        """Draft alternative wordings of a bullet or summary (a job). The drafts only
+        fill the page's edit form; saving one is a normal "add" edit by the user."""
+        from .generation import draft_versions
+
+        def work(job: Job) -> list[dict]:
+            return draft_versions(self._ctx(), item_id, note or "", previous or [], io=IO(out=job.lines.append))
+        return self._run(work)
 
     def builder_edit(self, op: str, args: dict) -> dict:
         """One change to master.yaml: update, add, delete, move or undo. Returns the new

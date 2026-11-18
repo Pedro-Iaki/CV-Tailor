@@ -93,7 +93,7 @@ class FakeClient:
     """Mimics client.messages.create. Queues answers for meta and selection calls."""
 
     def __init__(self, meta=None, selections=None, meta_error: Exception | None = None,
-                 proposals=None, revisions=None, texts=None):
+                 proposals=None, revisions=None, texts=None, versions=None):
         self.meta = meta or {"company": "Acme Pagamentos", "role_title": "Senior Data Engineer",
                              "language": "en", "job_url": None}
         self.selections = list(selections or [])
@@ -101,6 +101,7 @@ class FakeClient:
         self.revisions = list(revisions or [])   # each entry: one revised draft
         self.meta_error = meta_error
         self.texts = list(texts or [])  # free-text answers (careful mode analysis / review)
+        self.versions = list(versions or [])  # each entry: list of drafted versions for one call
         self.calls: list[dict] = []
         self.messages = self
 
@@ -113,6 +114,8 @@ class FakeClient:
             if self.meta_error:
                 raise self.meta_error
             return _resp(self.meta, usage=(50, 0, 0, 20))
+        if "drafts" in schema["properties"]:
+            return _resp({"drafts": self.versions.pop(0)}, usage=(300, 0, 0, 60))
         if "proposals" in schema["properties"]:
             return _resp({"proposals": self.proposals.pop(0)}, usage=(500, 0, 0, 100))
         if "origin" in schema["properties"]:

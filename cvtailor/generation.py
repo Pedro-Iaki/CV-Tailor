@@ -453,3 +453,126 @@ def apply_approved(ctx: Context, app_id: int, io: IO = IO()) -> Optional[Path]:
         raise
     io.out(f"#{app_id} re-rendered -> {display_path(path)}")
     return path
+
+
+# ---------------------------------------------------------------- versions (Master tab)
+# "+ version" in the Master tab can draft alternative wordings of one bullet or summary.
+# Drafts only fill the edit form: nothing is written to master.yaml until the user saves
+# the exact (possibly edited) text. Numbers and names the sources don't contain are
+# flagged on each draft so a new claim is never saved by accident.
+
+MAX_VERSION_DRAFTS = 3
+_NAME_RE = re.compile(r"[A-Za-zÀ-ÿ][\w+#./-]*")
+
+
+def _names(text: str) -> set[str]:
+    """Capitalised or mixed words that aren't the first word of a sentence (tools,
+    companies, products), lowercased."""
+    out = set()
+    for sentence in re.split(r"(?<=[.!?:;])\s+", text or ""):
+        for i, w in enumerate(_NAME_RE.findall(sentence)):
+            w = w.rstrip(".,;:/-")
+            if i and any(c.isupper() for c in w):
+                out.add(w.lower())
+    return out
+
+
+def _words(text: str) -> set[str]:
+    return {w.lower().rstrip(".,;:/-") for w in _NAME_RE.findall(text or "")}
+
+
+def version_sources(master: Master, item_id: str) -> tuple[Any, list[Any], list[Any], str]:
+    """(item, other items of its entry, its existing versions, where it sits)."""
+    idx = item_index(master)
+    it = idx.get(item_id)
+    if it is None or it.kind not in ("bullet", "summary"):
+        raise GenerationError(f"'{item_id}' is not a bullet or summary")
+    group = list(master.summaries) if it.kind == "summary" else list(idx[it.parent].obj.bullets)
+    root = set(it.obj.alt_of) or {item_id}
+    versions = [x for x in group if x.id != item_id and (x.id in root or set(x.alt_of) & root)]
+    others = [x for x in group if x.id != item_id and x not in versions]
+    if it.kind == "summary":
+        where = "the profile summary at the top of the CV"
+    else:
+        o = idx[it.parent]
+        where = f"a bullet of the {o.kind} '{item_text(o, 'en')}'" + (
+            f" at {o.obj.company}" if getattr(o.obj, "company", None) else "")
+    return it.obj, others, versions, where
+
+
+def check_version(draft: dict[str, Any], sources: list[Any]) -> Optional[dict[str, Any]]:
+    """Normalize a drafted version and flag what its sources don't contain."""
+    en = " ".join(str(draft.get("en") or "").split())
+    pt = " ".join(str(draft.get("pt") or "").split())
+    if not en or not pt or len(en) > MAX_TEXT * 2 or len(pt) > MAX_TEXT * 2:
+        return None
+    src_text = " ".join(f"{s.en} {s.pt}" for s in sources)
+    warnings = []
+    extra = (numbers(en) | numbers(pt)) - numbers(src_text)
+    if extra:
+        warnings.append("numbers not in the original: " + ", ".join(sorted(extra)))
+    known = _words(src_text)
+    new = sorted((_names(en) | _names(pt)) - known)
+    if new:
+        warnings.append("names not in the original: " + ", ".join(new))
+    return {"en": en, "pt": pt, "note": " ".join(str(draft.get("note") or "").split()),
+            "warnings": warnings}
+
+
+def drafting_llm(ctx: Context) -> tuple[Any, str, Optional[str], int]:
+    """The best setup available for drafting: (llm, label, reasoning, max_tokens).
+    Local: the 16k-context model with thinking on when it exists (short prompt, quality
+    matters more than speed), else the configured model and reasoning."""
+    cfg = ctx.cfg
+    if not cfg.llm_base_url:
+        return ctx.get_llm(), cfg.model, None, 8000
+    from . import ollama_setup
+    from .llm import LLM
+    from .local_llm import LocalClient
+    models = ollama_setup.status(cfg.llm_base_url).get("models") or []
+    client = LocalClient(cfg.llm_base_url, cfg.llm_api_key, cfg.llm_timeout)
+    if ollama_setup.has_model(models, ollama_setup.LONG_CONTEXT_MODEL):
+        model = ollama_setup.LONG_CONTEXT_MODEL
+        return LLM(model, None, client=client), f"{model}, thinking", "", 10000
+    return (LLM(cfg.model, None, client=client, max_output=cfg.llm_max_tokens),
+            f"{cfg.model}, reasoning {cfg.llm_reasoning or 'default'}", cfg.llm_reasoning, cfg.llm_max_tokens)
+
+
+def draft_versions(ctx: Context, item_id: str, note: str = "", previous: Optional[list[dict]] = None,
+                   n: int = MAX_VERSION_DRAFTS, io: IO = IO()) -> list[dict[str, Any]]:
+    """Draft up to n alternative wordings of one bullet or summary, each checked
+    against its sources. Writes nothing."""
+    ensure_enabled(ctx)
+    master = ctx.master
+    item, others, versions, where = version_sources(master, item_id)
+
+    def block(items: list[Any]) -> list[str]:
+        return [f"- en: {x.en}\n  pt: {x.pt}" for x in items] or ["(none)"]
+
+    shown = [{"en": str(d.get("en", "")), "pt": str(d.get("pt", ""))} for d in (previous or [])][-12:]
+    context = "\n".join([
+        f"ITEM ({where}), id {item_id}:", f"en: {item.en}", f"pt: {item.pt}", "",
+        "OTHER ITEMS OF THE SAME ENTRY:", *block(others), "",
+        "EXISTING VERSIONS OF THIS ITEM:", *block(versions), "",
+        "DRAFTS ALREADY OFFERED (write different ones):",
+        *([f"- {d['en']}" for d in shown] or ["(none)"]), "",
+        "CANDIDATE'S NOTE:", note.strip() or "(none: offer a few good alternatives, e.g. tighter, outcome first)",
+    ])
+    llm, label, reasoning, max_tokens = drafting_llm(ctx)
+    io.out(f"Drafting with {label}...")
+    try:
+        raws, usage = llm.versions(context, n=n, reasoning=reasoning, max_tokens=max_tokens)
+    except LLMError as e:
+        raise GenerationError(str(e)) from None
+    sources = [item, *versions] + (others if note.strip() else [])
+    seen = {item.en, *(v.en for v in versions), *(d["en"] for d in shown)}
+    out = []
+    for raw in raws:
+        d = check_version(raw, sources)
+        if d is None or d["en"] in seen:
+            continue
+        seen.add(d["en"])
+        out.append(d)
+    if not out:
+        raise GenerationError("the model returned no usable drafts; try again or change the note")
+    return out

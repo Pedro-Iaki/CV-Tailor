@@ -303,6 +303,46 @@ def build_proposal_schema(master: Master) -> dict[str, Any]:
     }
 
 
+VERSION_SYSTEM_PROMPT = """You draft alternative wordings ("versions") of ONE item from a candidate's resume. The
+candidate reads every draft, may edit it, and only saves the one they want; nothing
+you write is used otherwise.
+
+You receive the item (English and Brazilian Portuguese), where it sits (a job, project
+or education entry, or the summary), the other items of that entry for context and
+voice, the versions that already exist, drafts you already offered, and the
+candidate's note on what they want.
+
+Write {n} drafts, each clearly different from the item, the existing versions and the
+drafts already offered. Follow the note above everything except the fact rule.
+
+Fact rule: use only facts stated in the item, or in the other items of the same entry
+when the note asks to bring something in. Never add a number, tool, technology,
+company, team size, result or scope that is not stated there. If the note asks for
+something the sources don't state, write the best version without it and say so in
+"note".
+
+Style:
+- Same voice as the other items. Bullets: one sentence (two at most), past tense,
+  starting with a strong verb, no first person pronoun, no filler.
+- Show what was built or achieved and why it matters: a capability, a design
+  decision, an outcome. Never a changelog of recent activity.
+- At most the length of the original unless the note asks for more. Shorter is
+  usually better.
+- "en" and "pt" say the same thing; "pt" is natural Brazilian Portuguese (first
+  person verb forms, as in the original, e.g. "Construí").
+- "note": a few words on what this draft changes (e.g. "outcome first, shorter").
+"""
+
+
+def build_versions_schema(n: int) -> dict[str, Any]:
+    draft = {"type": "object",
+             "properties": {"en": {"type": "string"}, "pt": {"type": "string"}, "note": {"type": "string"}},
+             "required": ["en", "pt", "note"], "additionalProperties": False}
+    return {"type": "object",
+            "properties": {"drafts": {"type": "array", "items": draft, "minItems": 1, "maxItems": n}},
+            "required": ["drafts"], "additionalProperties": False}
+
+
 # ---------------------------------------------------------------- client
 
 def _text_of(resp: Any) -> str:
@@ -523,6 +563,21 @@ class LLM:
             return json.loads(_text_of(resp)), usage
         except json.JSONDecodeError as e:
             raise LLMError(f"revision response was not valid JSON: {e}") from None
+
+
+    def versions(self, context: str, n: int = 3, reasoning: Optional[str] = None,
+                 max_tokens: int = 10000) -> tuple[list[dict], Usage]:
+        """Draft alternative wordings of one item. Returned raw;
+        generation.draft_versions checks them."""
+        resp = self._call(system=[{"type": "text", "text": VERSION_SYSTEM_PROMPT.format(n=n)}],
+                          user=context, schema=build_versions_schema(n), max_tokens=max_tokens,
+                          reasoning=reasoning)
+        usage = Usage.from_response(resp)
+        try:
+            data = json.loads(_text_of(resp))
+        except json.JSONDecodeError as e:
+            raise LLMError(f"draft response was not valid JSON: {e}") from None
+        return list(data.get("drafts") or [])[:n], usage
 
 
 def _is_structured_output_unsupported(e: Exception) -> bool:
