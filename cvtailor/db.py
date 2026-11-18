@@ -131,11 +131,27 @@ MIGRATIONS: list[str] = [
       rated_at TEXT NOT NULL
     );
     """,
+    # 4: drafts, facts and unsafe items keep their text per language (the CV's
+    # languages are configurable) as a JSON object {code: text} instead of en/pt columns.
+    """
+    ALTER TABLE proposals ADD COLUMN texts TEXT NOT NULL DEFAULT '{}';
+    UPDATE proposals SET texts = json_object('en', en, 'pt', pt);
+    ALTER TABLE proposals DROP COLUMN en;
+    ALTER TABLE proposals DROP COLUMN pt;
+    ALTER TABLE facts ADD COLUMN texts TEXT NOT NULL DEFAULT '{}';
+    UPDATE facts SET texts = json_object('en', en, 'pt', pt);
+    ALTER TABLE facts DROP COLUMN en;
+    ALTER TABLE facts DROP COLUMN pt;
+    ALTER TABLE unsafe_items ADD COLUMN texts TEXT NOT NULL DEFAULT '{}';
+    UPDATE unsafe_items SET texts = json_object('en', en, 'pt', pt);
+    ALTER TABLE unsafe_items DROP COLUMN en;
+    ALTER TABLE unsafe_items DROP COLUMN pt;
+    """,
 ]
 
 JSON_COLUMNS = ("job_tags", "route_candidates", "selection", "llm_selection", "trimmed",
                 "unmatched_requirements", "suggestions", "generated_ids")
-ITEM_JSON_COLUMNS = ("based_on", "replaces", "tags")
+ITEM_JSON_COLUMNS = ("based_on", "replaces", "tags", "texts")
 
 
 def now_iso() -> str:

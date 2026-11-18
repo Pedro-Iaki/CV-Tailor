@@ -11,11 +11,13 @@ from typing import Any, Iterable, Optional
 import yaml
 from pydantic import ValidationError
 
+from .langs import name as lang_name
 from .schema import (
     TIERS,
-    Bilingual,
     Master,
     SkillCategory,
+    Texts,
+    has_text,
     skill_item_text,
     text_of,
 )
@@ -125,15 +127,17 @@ def check_master(m: Master) -> list[str]:
     for h in m.profile.headline_alts:
         see(h.id, "profile.headline_alts")
 
-    # 2. non-empty bilingual text
+    # 2. non-empty text in the primary language (the secondary one may be missing:
+    # such items are left out of CVs in that language, see missing_texts)
+    primary = m.primary
+
     def need_text(obj: Any, where: str) -> None:
-        if isinstance(obj, str):  # a Text given as one string for both languages
+        if isinstance(obj, str):  # a Text given as one string for every language
             if not obj.strip():
                 errors.append(f"{where}: empty")
             return
-        for lang in ("en", "pt"):
-            if not str(getattr(obj, lang, "") or "").strip():
-                errors.append(f"{where}: '{lang}' is empty")
+        if not obj.get(primary).strip():
+            errors.append(f"{where}: '{primary}' ({lang_name(primary)}) is empty")
 
     def maybe_text(obj: Any, where: str) -> None:
         if obj is not None:
@@ -183,7 +187,7 @@ def check_master(m: Master) -> list[str]:
         if c.min_items is not None and not 1 <= c.min_items <= len(c.items):
             errors.append(f"skill category {c.id}: min_items must be between 1 and its {len(c.items)} items")
         for i, item in enumerate(c.items):
-            if isinstance(item, Bilingual):
+            if isinstance(item, Texts):
                 need_text(item, f"skill category {c.id} item {i + 1}")
             elif not item.strip():
                 errors.append(f"skill category {c.id} item {i + 1}: empty")
@@ -194,7 +198,7 @@ def check_master(m: Master) -> list[str]:
     first_seen: dict[str, list[tuple[str, str]]] = {}
     for tier, c in _iter_skill_categories(m):
         for item in c.items:
-            key = skill_item_text(item, "en").strip().lower()
+            key = skill_item_text(item, primary).strip().lower()
             if not key:
                 continue
             clash = [(t, cid) for t, cid in first_seen.get(key, []) if cid not in conflicts.get(c.id, ())]
@@ -203,12 +207,12 @@ def check_master(m: Master) -> list[str]:
                 prev_tier, prev_cat = clash[0]
                 if prev_tier != tier:
                     errors.append(
-                        f"skill '{skill_item_text(item)}' appears in more than one tier "
+                        f"skill '{skill_item_text(item, primary)}' appears in more than one tier "
                         f"({prev_tier}/{prev_cat} and {tier}/{c.id})"
                     )
                 else:
                     errors.append(
-                        f"skill '{skill_item_text(item)}' appears more than once "
+                        f"skill '{skill_item_text(item, primary)}' appears more than once "
                         f"({prev_cat} and {c.id})"
                     )
 
@@ -387,7 +391,7 @@ def gate_headlines(m: Master, job_text: str) -> Master:
     top = _title_words(job_text[:TITLE_AREA])
 
     def named(h) -> bool:
-        return _names_role(h.en, top) or _names_role(h.pt, top)
+        return any(_names_role(t, top) for t in h.texts.values() if t)
     keep = [h for h in m.profile.headline_alts if named(h)]
     if len(keep) == len(m.profile.headline_alts):
         return m
@@ -403,6 +407,76 @@ def gate_projects(m: Master, job_tags: Iterable[str]) -> Master:
     if len(keep) == len(m.projects):
         return m
     return m.model_copy(update={"projects": keep})
+
+
+def missing_texts(m: Master, lang: str) -> list[tuple[str, str]]:
+    """(id, what) for every text that has nothing in `lang`. The id is the item's, or
+    its entry's for an entry's own texts (title, name, description, links); "profile"
+    for the profile's. A CV in `lang` can't show these."""
+    out: list[tuple[str, str]] = []
+
+    def need(value: Any, id_: str, what: str) -> None:
+        if not has_text(value, lang):
+            out.append((id_, what))
+
+    need(m.profile.headline, "profile", "profile headline")
+    for i, link in enumerate(m.profile.links):
+        need(link.label, "profile", f"profile link {i + 1} label")
+    for h in m.profile.headline_alts:
+        need(h, h.id, f"headline {h.id}")
+    for s in m.summaries:
+        need(s, s.id, f"summary {s.id}")
+        need(s.headline, s.id, f"summary {s.id} headline")
+    for o in [*m.jobs, *m.projects]:
+        need(o.description, o.id, f"{o.id} description")
+        for d in o.description_alts:
+            need(d, d.id, f"description {d.id}")
+    for j in m.jobs:
+        need(j.title, j.id, f"job {j.id} title")
+    for p in m.projects:
+        need(p.name, p.id, f"project {p.id} name")
+        for i, link in enumerate(p.links):
+            need(link.label, p.id, f"project {p.id} link {i + 1} label")
+    for e in m.education:
+        need(e.degree, e.id, f"education {e.id} degree")
+        need(e.institution, e.id, f"education {e.id} institution")
+        need(e.note, e.id, f"education {e.id} note")
+    for o in [*m.jobs, *m.projects, *m.education]:
+        for b in o.bullets:
+            need(b, b.id, f"bullet {b.id}")
+    for _, c in _iter_skill_categories(m):
+        need(c.category, c.id, f"skill category {c.id}")
+        for i, item in enumerate(c.items):
+            need(item, c.id, f"skill category {c.id} item {i + 1}")
+    return out
+
+
+def gate_language(m: Master, lang: str) -> Master:
+    """The master as the selector sees it for a CV in `lang`: summaries, bullets,
+    description and headline options, projects and skill lines without text in that
+    language are left out (like gate_projects), so a partly translated master still
+    makes CVs from what is translated. Job and education entries always show; a missing
+    title there is reported when rendering."""
+    missing = {id_ for id_, _ in missing_texts(m, lang)}
+    if not missing:
+        return m
+    ok = lambda x: x.id not in missing  # noqa: E731
+
+    def entry(o: Any) -> Any:
+        upd: dict[str, Any] = {"bullets": [b for b in o.bullets if ok(b)]}
+        if hasattr(o, "description_alts"):
+            upd["description_alts"] = [d for d in o.description_alts if ok(d)]
+        return o.model_copy(update=upd)
+    skills = m.skills.model_copy(update={t: [c for c in m.skills.tier(t) if ok(c)] for t in TIERS})
+    profile = m.profile.model_copy(update={"headline_alts": [h for h in m.profile.headline_alts if ok(h)]})
+    return m.model_copy(update={
+        "profile": profile,
+        "summaries": [s for s in m.summaries if ok(s)],
+        "jobs": [entry(j) for j in m.jobs],
+        "projects": [entry(p) for p in m.projects if ok(p)],
+        "education": [entry(e) for e in m.education],
+        "skills": skills,
+    })
 
 
 @dataclass
@@ -439,10 +513,10 @@ def item_index(m: Master) -> dict[str, Item]:
     return out
 
 
-def item_text(item: Item, lang: str = "en") -> str:
+def item_text(item: Item, lang: str) -> str:
     o = item.obj
     if item.kind in ("summary", "bullet", "description"):
-        return getattr(o, lang)
+        return o.get(lang)
     if item.kind == "project":
         return text_of(o.name, lang)
     if item.kind == "job":
@@ -454,14 +528,24 @@ def item_text(item: Item, lang: str = "en") -> str:
     return ""
 
 
+def skill_item_keys(item: Any) -> set[str]:
+    """The texts a selection may name a skill item by: any of its languages (selections
+    store the primary language's text; older ones may hold another language's)."""
+    return {item} if isinstance(item, str) else {t for t in item.texts.values() if t}
+
+
+def find_skill_item(cat: SkillCategory, text: str) -> Optional[Any]:
+    return next((i for i in cat.items if text in skill_item_keys(i)), None)
+
+
 def shown_skill_items(cat: SkillCategory, chosen: Optional[list[str]]) -> list[Any]:
-    """The items of a skill category a selection shows: `chosen` (exact English texts,
-    in order) or, when None, every item in master order. Unknown texts are skipped
-    here; validate_selection reports them."""
+    """The items of a skill category a selection shows: `chosen` (exact texts, in
+    order) or, when None, every item in master order. Unknown texts are skipped here;
+    validate_selection reports them."""
     if chosen is None:
         return list(cat.items)
-    by_en = {skill_item_text(i, "en"): i for i in cat.items}
-    return [by_en[t] for t in chosen if t in by_en]
+    found = [find_skill_item(cat, t) for t in chosen]
+    return [i for i in found if i is not None]
 
 
 def alt_conflicts(m: Master) -> dict[str, set[str]]:
@@ -512,68 +596,70 @@ def _never_with(id_: str, conflicts: dict[str, set[str]]) -> dict[str, Any]:
     return {"never_with": sorted(conflicts[id_])} if conflicts.get(id_) else {}
 
 
-def _index_item(it: Any, conflicts: dict[str, set[str]]) -> dict[str, Any]:
-    d = {"id": it.id, "tags": it.tags, "text": it.en}
+def _index_item(it: Any, conflicts: dict[str, set[str]], lang: str) -> dict[str, Any]:
+    d = {"id": it.id, "tags": it.tags, "text": it.get(lang)}
     if getattr(it, "headline", None):
-        d["headline"] = text_of(it.headline)  # shown under the name when this summary is picked
+        d["headline"] = text_of(it.headline, lang)  # shown under the name when this summary is picked
     return d | _never_with(it.id, conflicts)
 
 
-def _descriptions(o: Any, conflicts: dict[str, set[str]]) -> dict[str, Any]:
+def _descriptions(o: Any, conflicts: dict[str, set[str]], lang: str) -> dict[str, Any]:
     if not o.description_alts:
-        return {"text": text_of(o.description)} if o.description is not None else {}
+        return {"text": text_of(o.description, lang)} if o.description is not None else {}
     return {"description_options": [
-        {"id": "default", "text": text_of(o.description)},
-        *({"id": d.id, "tags": d.tags, "text": d.en} | _never_with(d.id, conflicts)
+        {"id": "default", "text": text_of(o.description, lang)},
+        *({"id": d.id, "tags": d.tags, "text": d.get(lang)} | _never_with(d.id, conflicts)
           for d in o.description_alts),
     ]}
 
 
 def build_llm_index(m: Master) -> str:
-    """Compact, deterministic JSON index sent to the selection model. No profile data."""
+    """Compact, deterministic JSON index sent to the selection model, in the primary
+    language. No profile data."""
     cx = alt_conflicts(m)
+    lang = m.primary
     headlines: dict[str, Any] = {}
     if m.profile.headline_alts:
         headlines["headline_options"] = [
-            {"id": "default", "text": text_of(m.profile.headline)},
-            *({"id": h.id, "text": h.en} | ({"tags": h.tags} if h.tags else {}) for h in m.profile.headline_alts),
+            {"id": "default", "text": text_of(m.profile.headline, lang)},
+            *({"id": h.id, "text": h.get(lang)} | ({"tags": h.tags} if h.tags else {}) for h in m.profile.headline_alts),
         ]
     idx = {
         **headlines,
-        "summaries": [_index_item(s, cx) for s in m.summaries],
+        "summaries": [_index_item(s, cx, lang) for s in m.summaries],
         "jobs": [
             {
                 "id": j.id,
                 "company": j.company,
-                "title": j.title.en,
+                "title": j.title.get(lang),
                 "start": j.start,
                 "end": j.end or "present",
-                **_descriptions(j, cx),
-                "bullets": [_index_item(b, cx) for b in j.bullets],
+                **_descriptions(j, cx, lang),
+                "bullets": [_index_item(b, cx, lang) for b in j.bullets],
             }
             for j in m.jobs
         ],
         "projects": [
             {
                 "id": p.id,
-                "name": text_of(p.name),
+                "name": text_of(p.name, lang),
                 "tags": p.tags,
-                **_descriptions(p, cx),
-                "bullets": [_index_item(b, cx) for b in p.bullets],
+                **_descriptions(p, cx, lang),
+                "bullets": [_index_item(b, cx, lang) for b in p.bullets],
             }
             for p in m.projects
         ],
         # Education is always shown; only its optional detail lines are selectable.
         "education_details": [
-            {"id": e.id, "degree": e.degree.en, "bullets": [_index_item(b, cx) for b in e.bullets]}
+            {"id": e.id, "degree": e.degree.get(lang), "bullets": [_index_item(b, cx, lang) for b in e.bullets]}
             for e in m.education if e.bullets
         ],
         "skill_categories": [
             {
                 "id": c.id,
                 "tier": tier,
-                "category": c.category.en,
-                "items": [skill_item_text(i, "en") for i in c.items],
+                "category": c.category.get(lang),
+                "items": [skill_item_text(i, lang) for i in c.items],
                 **({"required": True} if c.required else {}),
                 **({"min_items": c.min_items} if c.min_items else {}),
                 **_never_with(c.id, cx),

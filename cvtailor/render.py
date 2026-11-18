@@ -24,8 +24,20 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
 from .config import TEMPLATES_DIR
+from .langs import LANGUAGES
+from .langs import name as lang_name
 from .master import item_index, job_sort_key, parse_date, shown_skill_items
-from .schema import Master, RenderInput, Selection, skill_item_text, text_of
+from .schema import Master, RenderInput, Selection, has_text, text_of
+
+
+class MissingTextError(ValueError):
+    """The CV would show items that have no text in its language."""
+
+    def __init__(self, lang: str, missing: list[str]):
+        self.lang, self.missing = lang, missing
+        shown = missing[:12] + ([f"and {len(missing) - 12} more"] if len(missing) > 12 else [])
+        super().__init__(f"no {lang_name(lang)} text yet for: " + ", ".join(shown)
+                         + f". Add it in the Master tab (or master.yaml), or make the CV in another language.")
 
 
 @lru_cache(maxsize=4)
@@ -39,8 +51,10 @@ def load_i18n(templates_dir: Path = TEMPLATES_DIR) -> dict[str, Any]:
 
 def make_render_input(master: Master, selection: Selection, lang: str,
                       templates_dir: Path = TEMPLATES_DIR) -> RenderInput:
-    return RenderInput(master=master, selection=selection, lang=lang,
-                       i18n=load_i18n(templates_dir)[lang])
+    i18n = load_i18n(templates_dir)
+    if lang not in i18n or lang not in LANGUAGES:
+        raise ValueError(f"no CV template words for language '{lang}' (known: {', '.join(LANGUAGES)})")
+    return RenderInput(master=master, selection=selection, lang=lang, i18n=i18n[lang])
 
 
 # ---------------------------------------------------------------- context
@@ -64,38 +78,42 @@ def format_range(start: str, end: Optional[str], t: dict[str, Any], open_label: 
 def build_context(ri: RenderInput) -> dict[str, Any]:
     m, sel, lang, t = ri.master, ri.selection, ri.lang, ri.i18n
     idx = item_index(m)
+    missing: list[str] = []  # everything shown must have text in this language
 
-    def txt(value) -> str:
+    def txt(value, what: str = "") -> str:
+        if not has_text(value, lang):
+            missing.append(what or getattr(value, "id", "?"))
         return text_of(value, lang)
 
-    def links(items) -> list[dict[str, str]]:
-        return [{"label": txt(link.label), "url": link.url} for link in items]
+    def links(items, what: str) -> list[dict[str, str]]:
+        return [{"label": txt(link.label, f"{what} link"), "url": link.url} for link in items]
 
     def bullets(owner: str) -> list[str]:
-        return [getattr(idx[b].obj, lang) for b in sel.bullets.get(owner, [])]
+        return [txt(idx[b].obj, b) for b in sel.bullets.get(owner, [])]
 
     def description(o) -> str:
         alt = sel.descriptions.get(o.id)
-        return getattr(idx[alt].obj, lang) if alt else txt(o.description)
+        return txt(idx[alt].obj, alt) if alt else txt(o.description, f"{o.id} description")
 
     pr = m.profile
     summary = idx[sel.summary_id].obj
     # A picked headline option wins; otherwise a summary can bring its own headline.
     alt = next((h for h in pr.headline_alts if h.id == sel.headline_id), None)
-    headline = (getattr(alt, lang) if alt else
-                txt(summary.headline if summary.headline is not None else pr.headline))
+    headline = (txt(alt, alt.id) if alt else
+                txt(summary.headline, f"{summary.id} headline") if summary.headline is not None
+                else txt(pr.headline, "profile headline"))
     profile = {
         "name": pr.name,
         "headline": headline,
         "contact": [x for x in (pr.email, pr.phone, pr.location) if x],
-        "links": links(pr.links),
+        "links": links(pr.links, "profile"),
     }
 
     jobs = sorted(m.jobs, key=lambda j: job_sort_key(j.start, j.end), reverse=True)
     exp = []
     for j in jobs:
         exp.append({
-            "title": j.title.get(lang),
+            "title": txt(j.title, f"{j.id} title"),
             "company": j.company or "",
             "location": j.location or "",
             "dates": format_range(j.start, j.end, t, t["present"]),
@@ -107,9 +125,9 @@ def build_context(ri: RenderInput) -> dict[str, Any]:
     for pid in sel.project_ids:
         p = idx[pid].obj
         projects.append({
-            "name": txt(p.name),
+            "name": txt(p.name, f"{p.id} name"),
             "dates": format_range(p.start, p.end, t, t["present"]) if p.start else "",
-            "links": links(p.links),
+            "links": links(p.links, p.id),
             "description": description(p),
             "bullets": bullets(pid),
         })
@@ -118,10 +136,10 @@ def build_context(ri: RenderInput) -> dict[str, Any]:
     # own label; working and familiar categories are merged into one line per tier.
     # Languages come last.
     def shown(cid: str) -> list[str]:  # the selection may drop or reorder a category's items
-        return [skill_item_text(i, lang) for i in shown_skill_items(idx[cid].obj, sel.skill_items.get(cid))]
+        return [txt(i, f"{cid} item") for i in shown_skill_items(idx[cid].obj, sel.skill_items.get(cid))]
 
     def own_lines(tier: str) -> list[dict[str, str]]:
-        return [{"label": idx[cid].obj.category.get(lang), "text": ", ".join(shown(cid))}
+        return [{"label": txt(idx[cid].obj.category, cid), "text": ", ".join(shown(cid))}
                 for cid in getattr(sel.skill_category_order, tier)]
 
     skill_lines = own_lines("hands_on")
@@ -139,9 +157,9 @@ def build_context(ri: RenderInput) -> dict[str, Any]:
         if e.expected:
             dates += f" ({t['expected']})"
         education.append({
-            "degree": e.degree.get(lang),
-            "institution": txt(e.institution),
-            "note": txt(e.note),
+            "degree": txt(e.degree, f"{e.id} degree"),
+            "institution": txt(e.institution, f"{e.id} institution"),
+            "note": txt(e.note, f"{e.id} note"),
             "dates": dates,
             "details": bullets(e.id),
         })
@@ -153,12 +171,16 @@ def build_context(ri: RenderInput) -> dict[str, Any]:
         "skills": bool(skill_lines),
         "education": bool(education),
     }
+    summary_text = txt(summary, summary.id)
+    if missing:
+        raise MissingTextError(lang, list(dict.fromkeys(missing)))
     return {
         "lang": lang,
+        "html_lang": LANGUAGES[lang].html,
         "t": t,
         "profile": profile,
         "sections": [s for s in m.layout.sections if present[s]],
-        "summary": getattr(summary, lang),
+        "summary": summary_text,
         "experience": exp,
         "projects": projects,
         "projects_heading": t["headings"]["project" if len(projects) == 1 else "projects"],

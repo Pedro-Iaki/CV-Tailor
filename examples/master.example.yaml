@@ -1,6 +1,10 @@
 # Example master file. Copy to data/master.yaml and replace with your own content.
 # Every word in a generated CV comes from this file (plus templates/i18n.yaml).
 
+# The CV's languages (codes: en, pt, es, fr, de, it). Every text below is keyed by them.
+# secondary: null makes a one-language master.
+languages: { primary: en, secondary: pt }
+
 profile:
   name: "Ana Souza"
   headline: { en: "Data Engineer", pt: "Engenheira de Dados" }

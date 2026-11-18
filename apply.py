@@ -94,10 +94,19 @@ def _run(fn: Callable[[], None]) -> None:
 def _lang_cb(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
-    v = value.lower()
-    if v not in ("en", "pt"):
-        raise typer.BadParameter("must be 'en' or 'pt'")
+    from cvtailor.langs import LANGUAGES, normalize
+    v = normalize(value)
+    if v not in LANGUAGES:
+        raise typer.BadParameter(f"must be a language code: {', '.join(LANGUAGES)}")
     return v
+
+
+def _texts_lines(texts: dict, indent: str = "  ") -> str:
+    return "\n".join(f"{indent}{code.upper()}: {t}" for code, t in texts.items())
+
+
+def _first_text(texts: dict) -> str:
+    return next(iter(texts.values()), "") if texts else ""
 
 
 def _interactive_io() -> IO:
@@ -160,11 +169,12 @@ def validate_master() -> None:
 @app.command("render-file")
 def render_file(
     selection_file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Selection JSON."),
-    lang: Optional[str] = typer.Option(None, "--lang", callback=_lang_cb, help="en or pt (default: both)."),
+    lang: Optional[str] = typer.Option(None, "--lang", callback=_lang_cb,
+                                       help="A language code (default: each of the master's languages)."),
     no_trim: bool = typer.Option(False, "--no-trim"),
     out_dir: Optional[Path] = typer.Option(None, "--out", help="Output folder (default output/dev)."),
 ) -> None:
-    """[dev] Render a hand-written selection JSON to PDF (EN and PT), with page fit."""
+    """[dev] Render a hand-written selection JSON to PDF (in each language), with page fit."""
     def go() -> None:
         ctx = _ctx()
         sel = Selection.model_validate(json.loads(selection_file.read_text(encoding="utf-8")))
@@ -174,7 +184,7 @@ def render_file(
         target = out_dir or ctx.cfg.output_dir / "dev"
         target.mkdir(parents=True, exist_ok=True)
         renderer = ctx.get_renderer()
-        for lg in ([lang] if lang else ["en", "pt"]):
+        for lg in ([lang] if lang else ctx.master.langs):
             fit = fit_to_page(sel, ctx.master, lg, renderer.render, trim=not no_trim,
                               on_remove=lambda i, t: typer.echo(f"  trimmed {i}: {t}"))
             path = target / f"{selection_file.stem}_{lg.upper()}.pdf"
@@ -313,19 +323,19 @@ app.add_typer(unsafe_app, name="unsafe")
 
 def _item_rows(items: list[dict]) -> list[list]:
     return [[i["id"], i["job_id"] or "summary", i["origin"], i.get("source_application_id") or "",
-             i["en"][:70] + ("..." if len(i["en"]) > 70 else "")] for i in items]
+             _first_text(i["texts"])[:70] + ("..." if len(_first_text(i["texts"])) > 70 else "")] for i in items]
 
 
 @facts_app.command("list")
-def facts_list(full: bool = typer.Option(False, "--full", help="Show EN and PT text in full.")) -> None:
+def facts_list(full: bool = typer.Option(False, "--full", help="Show the text in every language, in full.")) -> None:
     """List approved facts."""
     items = load_facts(_ctx().db())
     if full:
         for i in items:
             typer.echo(f"{i['id']} ({i['origin']}, from {', '.join(i['based_on']) or '-'}, via {i['approved_via']})")
-            typer.echo(f"  EN: {i['en']}\n  PT: {i['pt']}")
+            typer.echo(_texts_lines(i["texts"]))
         return
-    print_table(["id", "job", "origin", "app", "en"], _item_rows(items))
+    print_table(["id", "job", "origin", "app", "text"], _item_rows(items))
 
 
 @facts_app.command("remove")
@@ -350,7 +360,7 @@ def unsafe_list() -> None:
     """List unsafe items (approved new claims awaiting manual promotion)."""
     for i in load_unsafe(_ctx().db()):
         typer.echo(f"{i['id']}  ({i['job_id'] or 'summary'}, from application #{i['source_application_id']})")
-        typer.echo(f"  EN: {i['en']}\n  PT: {i['pt']}")
+        typer.echo(_texts_lines(i["texts"]))
         if i.get("rationale"):
             typer.echo(f"  confirm: {i['rationale']}")
         if i.get("comment"):
@@ -360,7 +370,7 @@ def unsafe_list() -> None:
 @unsafe_app.command("promote")
 def unsafe_promote(
     ids: List[str] = typer.Argument(...),
-    edit: bool = typer.Option(False, "--edit", help="Edit the EN/PT text before promoting."),
+    edit: bool = typer.Option(False, "--edit", help="Edit the text before promoting."),
 ) -> None:
     """Move unsafe items to the facts table after you confirm each one is true.
 
@@ -372,15 +382,16 @@ def unsafe_promote(
             item = get_unsafe(conn, item_id)
             if item is None:
                 raise FactError(f"unsafe item '{item_id}' not found")
-            en, pt, tags = item["en"], item["pt"], item["tags"]
+            texts, tags = dict(item["texts"]), item["tags"]
             if edit:
-                edited = open_in_editor(yaml.safe_dump({"en": en, "pt": pt, "tags": tags},
+                edited = open_in_editor(yaml.safe_dump({**texts, "tags": tags},
                                                        allow_unicode=True, sort_keys=False, width=1000))
                 data = yaml.safe_load(edited) or {}
                 if not isinstance(data, dict):
-                    raise FactError("the edited file must be a YAML mapping with en, pt and tags")
-                en, pt, tags = str(data.get("en", "")), str(data.get("pt", "")), list(data.get("tags") or tags)
-            typer.echo(f"{item_id}\n  EN: {en}\n  PT: {pt}")
+                    raise FactError("the edited file must be a YAML mapping with a text per language and tags")
+                texts = {k: str(data.get(k, "")) for k in texts}
+                tags = list(data.get("tags") or tags)
+            typer.echo(f"{item_id}\n" + _texts_lines(texts))
             if item.get("rationale"):
                 typer.echo(f"  confirm: {item['rationale']}")
             if not typer.confirm("Is this accurate and true for you? Promote to facts", default=False):
@@ -388,7 +399,7 @@ def unsafe_promote(
                 continue
             conn.execute("BEGIN")
             try:
-                promote(conn, item_id, en=en, pt=pt, tags=tags)
+                promote(conn, item_id, texts=texts, tags=tags, langs=ctx.base_master.langs)
                 ctx.invalidate_master()
                 ctx.master  # re-validate master + facts before committing
                 conn.execute("COMMIT")
@@ -516,7 +527,7 @@ def approve(
     name: str = typer.Option(..., "--name", help="Variant name, e.g. platform-v1."),
     replace: bool = typer.Option(False, "--replace"),
 ) -> None:
-    """Save an application's selection as a reusable variant (must fit in EN and PT)."""
+    """Save an application's selection as a reusable variant (must fit in each of the master's languages)."""
     _run(lambda: approve_app(_ctx(), app_id, name, replace, _interactive_io()))
 
 

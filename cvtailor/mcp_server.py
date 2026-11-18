@@ -51,9 +51,9 @@ from .trim import PageFitError
 from .variants import VariantError, load_variants
 
 INSTRUCTIONS = """\
-CV Tailor builds one-page CVs (English or Brazilian Portuguese) by SELECTING and
-ORDERING items from the user's master resume. It never writes or rephrases resume
-text, and neither should you: to change a CV, change which ids are selected
+CV Tailor builds one-page CVs (in the languages the master names, e.g. English and
+Brazilian Portuguese) by SELECTING and ORDERING items from the user's master resume.
+It never writes or rephrases resume text, and neither should you: to change a CV, change which ids are selected
 (update_selection), or tell the user what to add to their master.yaml.
 
 Typical flow: tailor_cv(job_description) -> report the PDF path, route, trimmed ids,
@@ -62,7 +62,7 @@ the other language, approve_variant(...) for reusable selections, and
 set_status(...) as the application progresses.
 
 Optional text generation (only when CV_ALLOW_GENERATION=true): propose_text drafts
-wording; show every draft to the user EXACTLY as returned (EN and PT) and pass their
+wording; show every draft to the user EXACTLY as returned (every language) and pass their
 replies VERBATIM to review_proposals. Never answer for the user. Approved rephrasings
 become reusable facts; approved new claims are stored as UNSAFE and can only be
 promoted by the user in a terminal (`apply.py unsafe promote <id>`); no tool can do it.
@@ -125,7 +125,7 @@ def tailor_cv(
 ) -> dict:
     """Create a tailored one-page CV PDF for a job description and log the application.
 
-    Pass the full job description text. lang ('en' or 'pt') defaults to the language
+    Pass the full job description text. lang (a language code such as 'en') defaults to the language
     the posting is written in. company/role/lang override detected values (if all three
     are given, no metadata call is made). dry_run returns the selection without writing
     a PDF or a database row. If the user already applied to the same company and role
@@ -185,7 +185,7 @@ def get_application(app_id: int) -> dict:
     r = get_app(ctx, app_id)
     sel = Selection.model_validate(r["selection"])
     try:
-        selection_text = describe_selection(sel, ctx.master, "en")
+        selection_text = describe_selection(sel, ctx.master)
     except KeyError:
         selection_text = ["(selection references ids no longer in the master; use update_selection or regen)"]
     return {
@@ -263,7 +263,7 @@ def list_variants(min_age: int = 14) -> list[dict]:
 @_tool_errors
 def approve_variant(app_id: int, name: str, replace: bool = False) -> dict:
     """Save an application's selection as a reusable variant. It must fit on one page
-    in both English and Portuguese. Use replace=true to overwrite an existing name."""
+    in each of the master's languages. Use replace=true to overwrite an existing name."""
     ctx = make_context()
     io, log = _collector()
     path = approve(ctx, app_id, name, replace, io)
@@ -273,7 +273,7 @@ def approve_variant(app_id: int, name: str, replace: bool = False) -> dict:
 @_tool_errors
 def render_application(app_id: int, lang: Optional[str] = None) -> dict:
     """Re-render an application's stored selection to PDF without calling the LLM,
-    e.g. in the other language ('en' or 'pt') or after fixing a typo in the master."""
+    e.g. in the other language (a code such as 'en') or after fixing a typo in the master."""
     ctx = make_context()
     io, log = _collector()
     path = rerender(ctx, app_id, lang, io)
@@ -341,7 +341,7 @@ def validate_master() -> dict:
 def propose_text(app_id: int, max_items: int = 5) -> dict:
     """Draft wording improvements for an application's CV (needs CV_ALLOW_GENERATION=true).
 
-    Returns pending proposals. Show each one to the user verbatim (EN and PT, sources,
+    Returns pending proposals. Show each one to the user verbatim (every language, sources,
     rationale, and whether approval makes it a FACT or UNSAFE), then collect the user's
     reply for each: "y", "n", "y, <comment>" (revise and show again) or "n, <comment>".
     Calling this again supersedes proposals still pending for the application."""
@@ -381,7 +381,7 @@ def review_proposals(app_id: int, replies: dict[str, str]) -> dict:
 def list_facts() -> list[dict]:
     """Approved generated items (reusable; selectable like master items)."""
     ctx = make_context()
-    return [{k: f[k] for k in ("id", "kind", "job_id", "origin", "based_on", "en", "pt", "approved_via")}
+    return [{k: f[k] for k in ("id", "kind", "job_id", "origin", "based_on", "texts", "approved_via")}
             for f in load_facts(ctx.db())]
 
 
@@ -390,7 +390,7 @@ def list_unsafe() -> list[dict]:
     """Approved NEW claims awaiting manual promotion by the user (never rendered).
     There is intentionally no tool to promote them."""
     ctx = make_context()
-    return [{k: u[k] for k in ("id", "kind", "job_id", "en", "pt", "rationale", "comment")}
+    return [{k: u[k] for k in ("id", "kind", "job_id", "texts", "rationale", "comment")}
             for u in load_unsafe(ctx.db())]
 
 

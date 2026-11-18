@@ -65,9 +65,16 @@ details>summary{cursor:pointer}details.opts .opts-grid{display:grid;gap:6px;padd
 .panes{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:12px;flex:1;min-height:0}
 .panes iframe{min-height:0}
 pre.job{margin:0;white-space:pre-wrap;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;font:13px/1.45 "Segoe UI",system-ui}
+/* setup wizard */
+.wiz{max-width:760px;margin:0 auto}
+.wsteps{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 14px}.wsteps span{font-size:12px;padding:3px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.wsteps span.on{border-color:var(--accent);color:var(--ink);font-weight:600}.wsteps span.done{color:var(--ok)}
+.wiz label.small{display:grid;gap:3px}.wiz input[type=text]{width:100%}.wiz textarea{min-height:64px}
+.wgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}.wblock{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;gap:8px;margin-bottom:10px}
+.badge.miss{color:var(--warn);border-color:var(--warn)}
 /* settings */
 .field{display:grid;grid-template-columns:220px 1fr;gap:6px 14px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
-.field:first-child{border-top:0}.field input,.field select{width:100%}
+.field:first-child{border-top:0}.field input,.field select{width:100%}.field input[type=radio],.field input[type=checkbox]{width:auto}
 details.adv{margin-top:12px}details.adv summary{font-weight:600;padding:6px 0}
 .preset{display:grid;gap:6px}.preset label{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
 .preset label.on{border-color:var(--accent)}
@@ -115,7 +122,7 @@ details.adv{margin-top:12px}details.adv summary{font-weight:600;padding:6px 0}
    <textarea id="jobText" placeholder="Paste the job description here. A URL on the first line is kept as the posting's link."></textarea>
    <div class="row" style="margin-top:10px">
     <button id="pasteBtn">Paste from clipboard</button>
-    <label class="small">Language <select id="lang"><option value="">From the posting</option><option value="en">English</option><option value="pt">Portuguese</option></select></label>
+    <label class="small" id="langLabel">Language <select id="lang"><option value="">From the posting</option></select></label>
    </div>
    <div class="row" style="margin-top:12px" id="qualityRow"><b class="small">Quality</b><span class="seg big" id="quality"></span></div>
    <div class="muted small" id="qualityInfo" style="margin-top:4px"></div>
@@ -184,6 +191,8 @@ details.adv{margin-top:12px}details.adv summary{font-weight:600;padding:6px 0}
 
 <section class="tab" id="tab-setup"><div id="setup"></div></section>
 
+<section class="tab" id="tab-welcome"><div class="wiz" id="wizard"></div></section>
+
 <section class="tab" id="tab-settings"><div class="card"><div class="row"><h3 class="grow" style="margin:0">Settings</h3><span class="muted small" id="settingsFile"></span></div>
  <div id="settingsForm"></div><div class="row" style="margin-top:12px"><button class="primary" id="saveSettings">Save</button><span class="muted small" id="settingsMsg"></span></div></div></section>
 </main>
@@ -228,14 +237,21 @@ const tell = (title, body = '') => modal({title, body, cancel: ''});
 function placeholder(frame, text){
   frame.srcdoc = `<body style="margin:0;height:100vh;display:grid;place-items:center;font:14px 'Segoe UI',sans-serif;color:#8a8984;background:#fff;text-align:center;padding:0 24px">${esc(text)}</body>`;
 }
-function seg(el, cur, onPick, opts = [['en', 'EN'], ['pt', 'PT']]){
-  el.innerHTML = opts.map(([v, l]) => `<button data-v="${v}" class="${v === cur ? 'on' : ''}">${l}</button>`).join('');
+// The CV's languages (primary first), from master.yaml. One language: the switches hide.
+let LANGS = [{code: 'en', name: 'English'}, {code: 'pt', name: 'Portuguese'}];
+const L1 = () => LANGS[0].code;
+const langName = c => (LANGS.find(l => l.code === c) || (state?.language_choices || []).find(l => l.code === c) || {name: String(c).toUpperCase()}).name;
+const langOpts = (extra = []) => [...new Set([...LANGS.map(l => l.code), ...extra.filter(Boolean)])].map(c => [c, c.toUpperCase()]);
+function setLangs(list){ if (list && list.length) LANGS = list; }
+function seg(el, cur, onPick, opts = langOpts()){
+  el.innerHTML = opts.map(([v, l]) => `<button data-v="${v}" class="${v === cur ? 'on' : ''}" title="${esc(langName(v))}">${l}</button>`).join('');
+  el.style.display = opts.length > 1 ? '' : 'none';
   el.onclick = e => { const b = e.target.closest('button'); if (b && !b.disabled && b.dataset.v !== cur) onPick(b.dataset.v); };
 }
 
 // ---------------------------------------------------------------- tabs
 let curTab = 'new';
-const loaders = {apps: () => loadApps(), master: () => loadBuilder(), rate: () => loadRate(), setup: () => loadSetup(), settings: () => loadSettings()};
+const loaders = {apps: () => loadApps(), master: () => loadBuilder(), rate: () => loadRate(), setup: () => loadSetup(), settings: () => loadSettings(), welcome: () => drawWizard()};
 const leaveGuards = {settings: async () => {
   if (!SET?.dirty) return true;
   if (!await ask('Leave Settings without saving?', 'Your changes on this tab are not saved.', 'Leave without saving', true)) return false;
@@ -254,10 +270,12 @@ $('status').onclick = () => showTab('setup');
 
 async function refreshState(){
   state = await api('get_state');
+  setLangs(state.languages?.list); drawLangSelect();
   const o = state.ollama;
   let s = state.local ? `Local: ${state.model}` : `Anthropic API: ${state.model}`;
   if (state.local) s += o && o.running ? ' · Ollama running' : ' · Ollama not running';
-  if (!state.master_ok) s += ' · master.yaml has problems';
+  if (state.master_missing) s += ' · no master resume yet';
+  else if (!state.master_ok) s += ' · master.yaml has problems';
   $('status').textContent = s;
   $('status').classList.toggle('bad', (state.local && !(o && o.running)) || !state.master_ok);
   drawQuality();
@@ -283,6 +301,13 @@ function drawQuality(){
 }
 $('quality').onclick = e => { const b = e.target.closest('button'); if (!b || b.disabled) return; quality = b.dataset.v || null; drawQuality(); };
 
+function drawLangSelect(){
+  const cur = $('lang').value;
+  $('lang').innerHTML = `<option value="">From the posting</option>` + LANGS.map(l => `<option value="${l.code}">${esc(l.name)}</option>`).join('');
+  $('lang').value = LANGS.some(l => l.code === cur) ? cur : '';
+  $('langLabel').style.display = LANGS.length > 1 ? '' : 'none';
+  $('lang').title = LANGS.length > 1 ? `A posting in another language gets a ${LANGS[0].name} CV.` : '';
+}
 $('pasteBtn').onclick = async () => {
   const t = await api('read_clipboard');
   if (!t.trim()) { toast('The clipboard has no text.', 'bad'); return; }
@@ -331,9 +356,9 @@ async function showResult(job){
   if (r.unmatched?.length) h += `<p class="small"><b>Not covered by your master:</b> ${esc(r.unmatched.join('; '))}</p>`;
   if (r.suggestions?.length) h += `<p class="small"><b>Suggestions:</b> ${esc(r.suggestions.join(' | '))}</p>`;
   if (r.app_id) {
-    const other = r.lang === 'en' ? 'pt' : 'en';
+    const others = LANGS.map(l => l.code).filter(c => c !== r.lang);
     h += `<div class="row"><button class="primary" onclick="openPdf(${r.app_id}, '${r.lang}')">Open PDF</button>
-          <button onclick="openPdf(${r.app_id}, '${other}')">Make the ${other.toUpperCase()} PDF</button>
+          ${others.map(c => `<button onclick="openPdf(${r.app_id}, '${c}')">Make the ${esc(langName(c))} PDF</button>`).join('')}
           <button onclick="openInBuilder(${r.app_id})" title="Tick and untick items by hand in the Master tab">Edit by hand</button></div>`;
     $('newPreview').srcdoc = await api('preview', r.app_id, r.lang);
   } else h += '<p class="muted small">Dry run: nothing was saved. The selection is in Details above.</p>';
@@ -376,7 +401,7 @@ async function selectApp(r, lang){
     <button class="primary" onclick="openPdf(${r.id}, appLang)">Open PDF</button>
     <button onclick="openInBuilder(${r.id})" title="Tick and untick items by hand in the Master tab">Edit by hand</button>
     <button onclick="regenApp(${r.id})" title="Run the model's selection again">Re-run</button>`;
-  seg($('appLang'), appLang, l => selectApp(selApp, l));
+  seg($('appLang'), appLang, l => selectApp(selApp, l), langOpts([r.lang]));
   $('appPreview').srcdoc = await api('preview', r.id, appLang);
 }
 async function openInBuilder(id){ B.pendingApp = id; await showTab('master'); }
@@ -393,12 +418,15 @@ async function regenApp(id){
 // B.sel is a selection in the same shape the pipeline stores. Ticks change only B.sel;
 // the edit buttons change master.yaml through builder_edit (validated, undoable).
 const TIER_NAMES = {hands_on: 'Hands-on', working: 'Working knowledge', familiar: 'Familiar with', languages: 'Languages'};
-const LANG_NAME = {en: 'English', pt: 'Portuguese'};
 const B = {m: null, cx: {}, sel: null, lang: 'en', app: null, editing: null, timer: null, apps: [], ver: null, allowGen: false,
-           form: null, selDirty: false, pendingApp: null, fitTimer: null, fitSeq: 0, closed: new Set()};
+           form: null, selDirty: false, pendingApp: null, fitTimer: null, fitSeq: 0, closed: new Set(), missing: {}, touched: false};
 try { B.closed = new Set(JSON.parse(localStorage.getItem('bClosed') || '[]')); } catch (e) {}
-const T = x => x == null ? '' : typeof x === 'string' ? x : (x[B.lang] || x.en || '');
-const EN = x => typeof x === 'string' ? x : x.en;
+// A text in the shown language, falling back to the primary one (marked "no XX" in the list).
+const T = x => x == null ? '' : typeof x === 'string' ? x : (x[B.lang] || x[L1()] || '');
+const P = x => typeof x === 'string' ? x : (x?.[L1()] || '');  // the primary text: how selections name skill items
+const textsOf = x => Object.fromEntries(LANGS.map(l => [l.code, x == null ? '' : typeof x === 'string' ? x : (x[l.code] || '')]));
+const isMissing = id => B.lang !== L1() && (B.missing[B.lang] || []).includes(id);
+const missBadge = id => isMissing(id) ? `<span class="badge miss" title="No ${esc(langName(B.lang))} text: ${esc(langName(B.lang))} CVs leave this out. Edit it to add the text.">no ${B.lang.toUpperCase()}</span>` : '';
 const owners = () => [...B.m.jobs, ...B.m.projects, ...B.m.education];
 const findOwner = id => owners().find(o => o.id === id);
 const findItem = id => [...B.m.summaries, ...(B.m.profile.headline_alts || []), ...owners().flatMap(o => [...o.bullets, ...(o.description_alts || [])])].find(x => x.id === id);
@@ -426,7 +454,7 @@ function normalizeSel(){  // drop ids the master no longer has (after a delete o
   const cats = new Map(allCats().map(c => [c.id, c]));
   for (const t of Object.keys(TIER_NAMES)) s.skill_category_order[t] = (s.skill_category_order[t] || []).filter(c => cats.has(c));
   for (const [cid, list] of Object.entries(s.skill_items || {})) {
-    const own = cats.get(cid) ? cats.get(cid).items.map(EN) : [];
+    const own = cats.get(cid) ? cats.get(cid).items.map(P) : [];
     s.skill_items[cid] = list.filter(x => own.includes(x)); if (!s.skill_items[cid].length) delete s.skill_items[cid];
   }
 }
@@ -445,7 +473,11 @@ function inMasterOrder(list, ids){ const pos = new Map(list.map((x, i) => [x, i]
 
 async function loadBuilder(){
   const st = await api('builder_state');
-  if (st.error) { $('bLeft').innerHTML = `<div class="banner bad">master.yaml has problems:\n${esc(st.error)}</div>`; return; }
+  if (st.error) {
+    $('bLeft').innerHTML = state?.master_missing ? `<div class="card"><h3>No master resume yet</h3><p>Everything on a CV is picked from your master resume. The setup asks for the basics, then you add the rest here.</p><button class="primary" onclick="showTab('welcome')">Set it up</button></div>`
+      : `<div class="banner bad">master.yaml has problems:\n${esc(st.error)}</div>`;
+    return;
+  }
   applyState(st);
   if (B.pendingApp) {
     const id = B.pendingApp; B.pendingApp = null;
@@ -459,6 +491,8 @@ async function loadBuilder(){
 }
 function applyState(st){
   B.m = st.master; B.cx = st.conflicts; B.apps = st.apps; B.allowGen = !!st.allow_generation;
+  setLangs(st.langs); B.missing = st.missing || {};
+  if (!LANGS.some(l => l.code === B.lang)) B.lang = L1();
   $('bUndo').textContent = st.undo ? `Undo (${st.undo})` : 'Undo'; $('bUndo').disabled = !st.undo;
   if (B.sel) normalizeSel();
   drawLoad();
@@ -469,39 +503,42 @@ function drawLoad(){
 }
 async function loadFromApp(id){
   if (!id) { B.app = null; B.sel = defaultSel(); }
-  else { const a = await api('builder_from_app', +id); B.app = a; B.sel = JSON.parse(JSON.stringify(a.selection)); B.lang = a.lang;
+  else { const a = await api('builder_from_app', +id); B.app = a; B.sel = JSON.parse(JSON.stringify(a.selection)); B.lang = LANGS.some(l => l.code === a.lang) ? a.lang : L1();
          B.sel.descriptions = B.sel.descriptions || {}; B.sel.skill_items = B.sel.skill_items || {}; B.sel.headline_id = B.sel.headline_id || null; normalizeSel(); }
   B.selDirty = false;
   $('bToApp').style.display = B.app ? '' : 'none'; if (B.app) $('bToApp').textContent = `Save to #${B.app.id}`;
   drawLoad();
 }
 
-// ---- forms: one text box with an EN | PT switch; both texts are kept while switching
-function startForm(key, en, pt, tags){
-  B.editing = key;
-  B.form = {key, lang: B.lang, en: en || '', pt: pt || '', tags: tags ?? null, orig: {en: en || '', pt: pt || '', tags: tags ?? null}};
+// ---- forms: one text box with a language switch; every language's text is kept while switching
+function startForm(key, texts, tags){
+  B.editing = key; B.touched = false;
+  const t = textsOf(texts);
+  B.form = {key, lang: B.lang, texts: t, tags: tags ?? null, orig: {texts: {...t}, tags: tags ?? null}};
 }
 function keepForm(){
   const f = B.form, el = f && document.querySelector(`[data-form="${CSS.escape(f.key)}"]`); if (!el) return;
-  el.querySelectorAll('[data-ff]').forEach(e => f[e.dataset.ff === 'text' ? e.dataset.l : e.dataset.ff] = e.value);
+  el.querySelectorAll('[data-ff]').forEach(e => { if (e.dataset.ff === 'text') f.texts[e.dataset.l] = e.value; else f[e.dataset.ff] = e.value; });
 }
 function keepVer(){
   const f = B.ver && document.querySelector('[data-form="ver"]'); if (!f) return;
-  f.querySelectorAll('[data-v]').forEach(e => B.ver[e.dataset.v === 'text' ? e.dataset.l : e.dataset.v] = e.value);
+  f.querySelectorAll('[data-v]').forEach(e => { if (e.dataset.v === 'text') B.ver.texts[e.dataset.l] = e.value; else B.ver[e.dataset.v] = e.value; });
 }
-const langToggle = (act, cur) => `<span class="seg">${['en', 'pt'].map(l => `<button data-act="${act}" data-l="${l}" class="${cur === l ? 'on' : ''}">${l.toUpperCase()}</button>`).join('')}</span>`;
-function staleNote(f){  // one language changed (or written) and the other not
-  const other = f.lang === 'en' ? 'pt' : 'en', changed = l => f[l].trim() !== f.orig[l].trim();
-  if (changed('en') === changed('pt')) return '';
-  const stale = changed('en') ? 'pt' : 'en', empty = !f[stale].trim();
-  const what = empty ? `The ${LANG_NAME[stale]} text is empty.` : `The ${LANG_NAME[stale]} text still matches the original.`;
-  return `<div class="warn small">${stale === f.lang ? `${what} The ${LANG_NAME[other]} was changed.` : `${what} Switch to ${stale.toUpperCase()} to update it.`}</div>`;
+const langToggle = (act, cur) => LANGS.length < 2 ? '' : `<span class="seg">${LANGS.map(l => `<button data-act="${act}" data-l="${l.code}" class="${cur === l.code ? 'on' : ''}" title="${esc(l.name)}">${l.code.toUpperCase()}</button>`).join('')}</span>`;
+const sameTexts = (a, b) => LANGS.every(l => (a[l.code] || '').trim() === (b[l.code] || '').trim());
+function staleNote(f){  // two languages: one changed (or written) and the other not
+  if (LANGS.length < 2) return '';
+  const [a, b] = LANGS.map(l => l.code), orig = f.orig.texts || f.orig, changed = l => (f.texts[l] || '').trim() !== (orig[l] || '').trim();
+  if (changed(a) === changed(b)) return '';
+  const stale = changed(a) ? b : a, other = stale === a ? b : a, empty = !(f.texts[stale] || '').trim();
+  const what = empty ? `The ${langName(stale)} text is empty.` : `The ${langName(stale)} text still matches the original.`;
+  return `<div class="warn small">${stale === f.lang ? `${what} The ${langName(other)} was changed.` : `${what} Switch to ${stale.toUpperCase()} to update it.`}</div>`;
 }
 function textForm(saveAct = 'save', title = ''){
   const f = B.form;
   return `<div class="bform" data-form="${esc(f.key)}">
     <div class="row"><b class="small grow">${esc(title)}</b>${langToggle('formlang', f.lang)}</div>
-    <textarea data-ff="text" data-l="${f.lang}" placeholder="${LANG_NAME[f.lang]} text">${esc(f[f.lang])}</textarea>${staleNote(f)}
+    <textarea data-ff="text" data-l="${f.lang}" placeholder="${esc(langName(f.lang))} text">${esc(f.texts[f.lang])}</textarea>${staleNote(f)}
     ${f.tags !== null ? `<label class="small">Tags (comma separated)<input type="text" data-ff="tags" value="${esc(f.tags)}"></label>` : ''}
     <div class="row"><button class="primary mini" data-act="${saveAct}" data-id="${esc(f.key)}">Save</button><button class="mini" data-act="cancel">Cancel</button>
       <span class="muted small">Ctrl+Enter saves, Esc cancels</span></div></div>`;
@@ -509,17 +546,17 @@ function textForm(saveAct = 'save', title = ''){
 function formDirty(){
   keepForm(); keepVer();
   const f = B.form, v = B.ver;
-  if (f && (f.en !== f.orig.en || f.pt !== f.orig.pt || (f.tags ?? '') !== (f.orig.tags ?? ''))) return true;
-  if (v && (v.en !== v.orig.en || v.pt !== v.orig.pt || v.note.trim() || v.drafts.length)) return true;
-  return false;
+  if (f && (!sameTexts(f.texts, f.orig.texts) || (f.tags ?? '') !== (f.orig.tags ?? ''))) return true;
+  if (v && (!sameTexts(v.texts, v.orig) || v.note.trim() || v.drafts.length)) return true;
+  return !!(B.editing && B.touched);  // skill line and entry forms
 }
 async function canLeave(){  // before anything that would close the open form
   if (!B.editing && !B.ver) return true;
   if (formDirty() && !await ask('Discard your unsaved edit?', 'What you changed in the open form will be lost.', 'Discard', true)) return false;
-  B.form = null; B.ver = null; B.editing = null; return true;
+  B.form = null; B.ver = null; B.editing = null; B.touched = false; return true;
 }
 function focusForm(){
-  const t = document.querySelector('#bLeft [data-ff=text], #bLeft [data-v=text], #bLeft .bform input[data-f=cen]');
+  const t = document.querySelector('#bLeft [data-ff=text], #bLeft [data-v=text], #bLeft .bform input[data-f]');
   if (t) { t.focus(); if (t.setSelectionRange) t.setSelectionRange(t.value.length, t.value.length); }
 }
 
@@ -535,7 +572,7 @@ function itemRow(it, pick, opts = {}){
   const alt = (it.alt_of || []).length && !opts.desc, tags = (it.tags || []).join(', ');
   const covers = opts.desc && (it.alt_of || []).length ? `<span class="badge" title="This description already says what these bullets say, so a CV never shows both">covers ${esc(it.alt_of.join(', '))}</span>` : '';
   return `<div class="bi ${alt ? 'ver' : ''}">${pick}
-    <div class="txt">${esc(T(it))}${alt ? `<span class="badge" title="Another wording of ${esc(it.alt_of.join(' + '))}: a CV shows at most one of them">version of ${esc(it.alt_of.join(', '))}</span>` : ''}${covers}
+    <div class="txt">${isMissing(it.id) ? `<span class="muted">${esc(T(it))}</span>` : esc(T(it))}${missBadge(it.id)}${alt ? `<span class="badge" title="Another wording of ${esc(it.alt_of.join(' + '))}: a CV shows at most one of them">version of ${esc(it.alt_of.join(', '))}</span>` : ''}${covers}
       <div class="tagl">${esc(it.id)}${tags ? ' · ' + esc(tags) : ''}</div></div>${acts(it.id, {...opts, fact: !!it.origin, noMove: opts.noMove || alt})}</div>` +
     (B.ver && B.editing === 'ver:' + it.id ? versionPanel() : '');
 }
@@ -551,10 +588,10 @@ function versionPanel(){
       ${v.busy ? '<span class="spin"></span>' : ''}<span class="small ${v.error ? 'bad' : 'muted'}" id="verStatus" style="white-space:pre-wrap">${esc(v.error || v.status)}</span></div>` +
     (v.busy ? `<div class="vdrafts" id="verLive">${liveHtml(v)}</div>` : '') +
     (v.drafts.length ? `<div class="vdrafts">` + v.drafts.map((d, i) => `<div class="vdraft"><div>${esc(d[v.lang])}</div>
-        <button class="mini" data-act="usedraft" data-i="${i}" title="Copies both languages into the box below">Use this</button>
+        <button class="mini" data-act="usedraft" data-i="${i}" title="Copies ${LANGS.length > 1 ? 'every language' : 'it'} into the box below">Use this</button>
         <div class="tagl">${esc(d.note)}</div><span></span>${d.warnings.map(w => `<div class="warn">⚠ ${esc(w)}: only keep it if it's true</div><span></span>`).join('')}</div>`).join('') + '</div>' : '');
   return `<div class="vpanel" data-form="ver"><div class="row"><b class="small grow">New version of ${esc(v.id)}</b>${langToggle('verlang', v.lang)}</div>${gen}
-    <div class="bform"><label class="small">${LANG_NAME[v.lang]}<textarea data-v="text" data-l="${v.lang}">${esc(v[v.lang])}</textarea></label>${staleNote(v)}
+    <div class="bform"><label class="small">${esc(langName(v.lang))}<textarea data-v="text" data-l="${v.lang}">${esc(v.texts[v.lang])}</textarea></label>${staleNote(v)}
       <label class="small">Tags (comma separated)<input type="text" data-v="tags" value="${esc(v.tags)}"></label>
       <div class="row"><button class="primary mini" data-act="savever">Save version</button><button class="mini" data-act="cancel">Cancel</button>
         <span class="muted small">Ctrl+Enter saves, Esc cancels</span></div></div></div>`;
@@ -570,7 +607,7 @@ function partialTexts(text, key){
   return out;
 }
 function liveHtml(v){
-  const other = v.lang === 'en' ? 'pt' : 'en', a = partialTexts(v.live || '', v.lang), b = partialTexts(v.live || '', other);
+  const other = LANGS.map(l => l.code).find(c => c !== v.lang) || v.lang, a = partialTexts(v.live || '', v.lang), b = partialTexts(v.live || '', other);
   const n = Math.max(a.length, b.length);
   if (!n) return `<div class="vdraft"><div class="muted">Waiting for the model to start writing${v.t0 ? ` (${Math.round((Date.now() - v.t0) / 1000)} s)` : ''}...
     It loads first if it isn't in memory, and waits its turn if another CV is being made. The drafts appear here as they are written.</div><span></span></div>`;
@@ -603,20 +640,59 @@ function bulletRows(o, kind){
 function descRows(o){
   if (o.description == null && !(o.description_alts || []).length) return '';
   const cur = B.sel.descriptions[o.id] || 'default', name = `desc-${esc(o.id)}`, key = o.id + DESC;
+  const dmiss = B.lang !== L1() && o.description != null && typeof o.description !== 'string' && !o.description[B.lang];
   let h = B.editing === key && B.form ? textForm('savedesc', 'Default description') : `<div class="bi"><input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="default" ${cur === 'default' ? 'checked' : ''}>
-    <div class="txt"><i>${esc(T(o.description))}</i><div class="tagl">default description</div></div>${acts(key, {noDel: true, noMove: true})}</div>`;
+    <div class="txt"><i class="${dmiss ? 'muted' : ''}">${esc(T(o.description))}</i>${dmiss ? `<span class="badge miss">no ${B.lang.toUpperCase()}</span>` : ''}<div class="tagl">default description</div></div>${acts(key, {noDel: true, noMove: true})}</div>`;
   h += (o.description_alts || []).map(d => itemRow(d, `<input type="radio" name="${name}" data-pick="desc" data-owner="${esc(o.id)}" value="${esc(d.id)}" ${cur === d.id ? 'checked' : ''}>`, {desc: true})).join('');
   return h;
 }
 function catEditor(c){
-  const lines = c.items.map(i => typeof i === 'string' ? i : (i.en === i.pt ? i.en : `${i.en} | ${i.pt}`)).join('\n');
-  return `<div class="bform" data-form="${esc(c.id)}"><label class="small">Name (English)<input type="text" data-f="cen" value="${esc(c.category.en)}"></label>
-    <label class="small">Name (Portuguese)<input type="text" data-f="cpt" value="${esc(c.category.pt)}"></label>
-    <label class="small">Items, one per line ("English | Portuguese" when they differ)<textarea data-f="items" style="min-height:160px">${esc(lines)}</textarea></label>
+  const multi = LANGS.length > 1;
+  const lines = c.items.map(i => { const t = LANGS.map(l => typeof i === 'string' ? i : (i[l.code] || ''));
+    return t.every(x => x === t[0]) ? t[0] : t.join(' | '); }).join('\n');
+  return `<div class="bform" data-form="${esc(c.id)}">` + LANGS.map(l => `<label class="small">Name${multi ? ` (${esc(l.name)})` : ''}<input type="text" data-f="c-${l.code}" value="${esc(c.category[l.code] || '')}"></label>`).join('') + `
+    <label class="small">Items, one per line${multi ? ` ("${LANGS.map(l => esc(l.name)).join(' | ')}" when they differ)` : ''}<textarea data-f="items" style="min-height:160px">${esc(lines)}</textarea></label>
     <div class="row"><label class="small"><input type="checkbox" data-f="required" ${c.required ? 'checked' : ''}> required in its layout</label>
       <label class="small">min items <input type="number" data-f="min" min="0" style="width:70px" value="${c.min_items || ''}"></label></div>
     <div class="row"><button class="primary mini" data-act="savecat" data-id="${esc(c.id)}">Save</button><button class="mini" data-act="cancel">Cancel</button>
       <span class="muted small">Ctrl+Enter saves, Esc cancels</span></div></div>`;
+}
+// A job, project or education entry's own fields (new or existing). Short per-language
+// fields sit one under the other; a new job also takes its first bullet.
+function entryForm(kind, e){
+  const key = e ? 'entry:' + e.id : 'newentry:' + kind, multi = LANGS.length > 1;
+  const per = (f, label, val, area) => LANGS.map(l => {
+    const v = val == null ? '' : typeof val === 'string' ? val : (val[l.code] || ''), lab = esc(label) + (multi ? ` (${esc(l.name)})` : '');
+    return area ? `<label class="small">${lab}<textarea data-f="${f}.${l.code}" style="min-height:52px">${esc(v)}</textarea></label>`
+                : `<label class="small">${lab}<input type="text" data-f="${f}.${l.code}" value="${esc(v)}"></label>`; }).join('');
+  const one = (f, label, val, ph = '') => `<label class="small grow">${esc(label)}<input type="text" data-f="${f}" value="${esc(val ?? '')}" placeholder="${esc(ph)}"></label>`;
+  let h = '';
+  if (kind === 'job') h += per('title', 'Job title', e?.title) + `<div class="row">${one('company', 'Company', e?.company)}${one('location', 'Location (optional)', e?.location)}</div>`;
+  if (kind === 'project') h += per('name', 'Project name', e?.name) + one('tags', 'Tags (comma separated)', (e?.tags || []).join(', '), 'e.g. python, dbt');
+  if (kind === 'education') h += per('degree', 'Degree', e?.degree) + per('institution', 'School', e?.institution) + per('note', 'Optional note, e.g. honours', e?.note);
+  h += `<div class="row">${one('start', 'Start (YYYY-MM or YYYY)', e?.start, '2021-03')}${one('end', kind === 'education' ? 'End (YYYY-MM or YYYY)' : 'End (empty: present)', e?.end, kind === 'education' ? '' : 'present')}</div>`;
+  if (kind === 'education') h += `<label class="small"><input type="checkbox" data-f="expected" ${e?.expected ? 'checked' : ''}> the end date is expected (not finished yet)</label>`;
+  if (kind !== 'education') h += per('description', 'Optional description line', e?.description, true);
+  if (!e && kind !== 'education') h += `<b class="small">First bullet${kind === 'job' ? '' : ' (optional)'}</b>` + per('bullet', 'Bullet', null, true) + one('btags', 'Bullet tags (comma separated)', '', 'e.g. python, sql');
+  return `<div class="bform bent" data-form="${esc(key)}"><b class="small">${e ? 'Edit ' + esc(e.id) : 'New ' + kind}</b>${h}
+    <div class="row"><button class="primary mini" data-act="saveentry" data-id="${esc(key)}">Save</button><button class="mini" data-act="cancel">Cancel</button>
+      <span class="muted small">Ctrl+Enter saves, Esc cancels</span></div></div>`;
+}
+function entryData(key){
+  const v = formVals(key), codes = LANGS.map(l => l.code), kind = key.startsWith('entry:') ? findOwnerKind(key.slice(6)) : key.slice(9);
+  const per = f => Object.fromEntries(codes.map(c => [c, (v[f + '.' + c] || '').trim()]));
+  const textOrSame = f => { const t = per(f), vals = codes.map(c => t[c]); return vals.every(x => x === vals[0]) ? vals[0] : t; };
+  const d = {start: (v.start || '').trim(), end: (v.end || '').trim()};
+  if (kind === 'job') Object.assign(d, {title: per('title'), company: v.company.trim(), location: v.location.trim(), description: textOrSame('description')});
+  if (kind === 'project') Object.assign(d, {name: textOrSame('name'), tags: v.tags, description: textOrSame('description')});
+  if (kind === 'education') Object.assign(d, {degree: per('degree'), institution: textOrSame('institution'), note: textOrSame('note'), expected: !!v.expected});
+  if (key.startsWith('newentry:') && kind !== 'education' && per('bullet')[codes[0]]) d.bullet = {...per('bullet'), tags: v.btags};
+  return {kind, data: d};
+}
+const findOwnerKind = id => B.m.jobs.some(o => o.id === id) ? 'job' : B.m.projects.some(o => o.id === id) ? 'project' : 'education';
+function headRow(o, kind, inner){  // an entry's head line, or its form while it is edited
+  if (B.editing === 'entry:' + o.id) return entryForm(kind, o);
+  return `<div class="head">${inner}${missBadge(o.id)}${acts(o.id, {noDel: true, noMove: kind !== 'project'})}</div>`;
 }
 function section(key, title, side, body){
   const closed = B.closed.has(key);
@@ -638,17 +714,20 @@ function drawBuilder(){
     grouped(m.summaries).map(x => itemRow(x, `<input type="radio" name="sum" data-pick="summary" value="${esc(x.id)}" ${s.summary_id === x.id ? 'checked' : ''}>`, {version: true})).join('') +
     (B.editing === 'new:summary' && B.form ? textForm('save', 'New summary') : '') + '</div>');
   const total = [...m.jobs.map(j => j.id), ...s.project_ids].reduce((n, id) => n + (s.bullets[id] || []).length, 0);
+  const addEntry = kind => `<button class="mini" data-act="addentry" data-id="${kind}">+ ${kind}</button>`;
+  const newEntry = kind => B.editing === 'newentry:' + kind ? entryForm(kind, null) : '';
   for (const sec of m.layout.sections) {
     if (sec === 'experience') h += section('experience', 'Experience',
-      `<span class="small ${total > lim.max_total_bullets ? 'bad' : 'muted'}">${total} bullets on the CV (max ${lim.max_total_bullets})</span>`,
-      m.jobs.map(j => `<div class="bent"><div class="head"><span class="grow">${esc(T(j.title))}${j.company ? ' · ' + esc(j.company) : ''}</span><span class="muted small">${esc(j.start)} - ${esc(j.end || 'present')}</span></div>${descRows(j)}${bulletRows(j, 'job')}</div>`).join(''));
-    if (sec === 'projects' && m.projects.length) h += section('projects', 'Projects',
-      `<span class="small ${s.project_ids.length > lim.max_projects ? 'bad' : 'muted'}">${s.project_ids.length} of max ${lim.max_projects} picked</span>`,
-      m.projects.map(p => `<div class="bent"><div class="head"><input type="checkbox" data-pick="project" value="${esc(p.id)}" ${s.project_ids.includes(p.id) ? 'checked' : ''}>
-        <span class="grow">${esc(T(p.name))}</span>${(p.only_for_tags || []).length ? `<span class="badge" title="The selector only sees it when the job mentions one of these">only for: ${esc(p.only_for_tags.join(', '))}</span>` : ''}
-        ${acts(p.id, {noEdit: true, noDel: true})}</div>${descRows(p)}${bulletRows(p, 'project')}</div>`).join(''));
-    if (sec === 'education' && m.education.length) h += section('education', 'Education', '',
-      m.education.map(e => `<div class="bent"><div class="head"><span class="grow">${esc(T(e.degree))}</span><span class="muted small">${esc(T(e.institution))}</span></div>${bulletRows(e, 'education')}</div>`).join(''));
+      `<span class="small ${total > lim.max_total_bullets ? 'bad' : 'muted'}">${total} bullets on the CV (max ${lim.max_total_bullets})</span>${addEntry('job')}`,
+      newEntry('job') + m.jobs.map(j => `<div class="bent">${headRow(j, 'job', `<span class="grow">${esc(T(j.title))}${j.company ? ' · ' + esc(j.company) : ''}</span><span class="muted small">${esc(j.start)} - ${esc(j.end || 'present')}</span>`)}${descRows(j)}${bulletRows(j, 'job')}</div>`).join(''));
+    if (sec === 'projects') h += section('projects', 'Projects',
+      (m.projects.length ? `<span class="small ${s.project_ids.length > lim.max_projects ? 'bad' : 'muted'}">${s.project_ids.length} of max ${lim.max_projects} picked</span>` : '') + addEntry('project'),
+      newEntry('project') + (m.projects.map(p => `<div class="bent">${headRow(p, 'project', `<input type="checkbox" data-pick="project" value="${esc(p.id)}" ${s.project_ids.includes(p.id) ? 'checked' : ''}>
+        <span class="grow">${esc(T(p.name))}</span>${(p.only_for_tags || []).length ? `<span class="badge" title="The selector only sees it when the job mentions one of these">only for: ${esc(p.only_for_tags.join(', '))}</span>` : ''}`)}${descRows(p)}${bulletRows(p, 'project')}</div>`).join('')
+        || (B.editing === 'newentry:project' ? '' : '<p class="muted small" style="padding:0 12px">No projects yet.</p>')));
+    if (sec === 'education') h += section('education', 'Education', addEntry('education'),
+      newEntry('education') + (m.education.map(e => `<div class="bent">${headRow(e, 'education', `<span class="grow">${esc(T(e.degree))}</span><span class="muted small">${esc(T(e.institution))}</span>`)}${bulletRows(e, 'education')}</div>`).join('')
+        || (B.editing === 'newentry:education' ? '' : '<p class="muted small" style="padding:0 12px">No education yet.</p>')));
     if (sec === 'skills') {
       let body = '';
       for (const t of Object.keys(TIER_NAMES)) {
@@ -656,18 +735,20 @@ function drawBuilder(){
         body += `<div class="bent"><div class="head"><span class="grow">${TIER_NAMES[t]}</span><button class="mini" data-act="addcat" data-id="${t}">+ line</button></div>`;
         for (const c of cats) {
           if (B.editing === c.id) { body += catEditor(c); continue; }
-          const on = (s.skill_category_order[t] || []).includes(c.id), shown = s.skill_items[c.id] || c.items.map(EN);
+          const on = (s.skill_category_order[t] || []).includes(c.id), shown = s.skill_items[c.id] || c.items.map(P);
           body += `<div class="bi"><input type="checkbox" data-pick="cat" data-tier="${t}" value="${esc(c.id)}" ${on ? 'checked' : ''}>
-            <div class="txt"><b>${esc(T(c.category))}</b>${(c.alt_of || []).length ? `<span class="badge" title="An alternative to ${esc(c.alt_of.join(' + '))}: never shown together">version of ${esc(c.alt_of.join(', '))}</span>` : ''}${c.required ? '<span class="badge">required</span>' : ''}${c.min_items ? `<span class="badge">min ${c.min_items}</span>` : ''}
+            <div class="txt"><b>${esc(T(c.category))}</b>${missBadge(c.id)}${(c.alt_of || []).length ? `<span class="badge" title="An alternative to ${esc(c.alt_of.join(' + '))}: never shown together">version of ${esc(c.alt_of.join(', '))}</span>` : ''}${c.required ? '<span class="badge">required</span>' : ''}${c.min_items ? `<span class="badge">min ${c.min_items}</span>` : ''}
             <div class="tagl">${esc(c.id)}</div></div>${acts(c.id)}</div>`;
-          if (on) body += `<div class="chips">` + c.items.map(i => `<label><input type="checkbox" data-pick="skill" data-cat="${esc(c.id)}" value="${esc(EN(i))}" ${shown.includes(EN(i)) ? 'checked' : ''}>${esc(T(i))}</label>`).join('') + '</div>';
+          if (on) body += `<div class="chips">` + c.items.map(i => `<label><input type="checkbox" data-pick="skill" data-cat="${esc(c.id)}" value="${esc(P(i))}" ${shown.includes(P(i)) ? 'checked' : ''}>${esc(T(i))}</label>`).join('') + '</div>';
         }
-        if (B.editing === 'new:cat:' + t) body += catEditor({id: 'new:cat:' + t, category: {en: '', pt: ''}, items: []});
+        if (B.editing === 'new:cat:' + t) body += catEditor({id: 'new:cat:' + t, category: {}, items: []});
         body += '</div>';
       }
       h += section('skills', 'Skills', `<span class="muted small">a line can't go with its versions</span>`, body);
     }
   }
+  const miss = B.lang !== L1() ? (B.missing[B.lang] || []).length : 0;
+  if (miss) h = `<div class="banner small" style="margin-bottom:12px">${miss} item${miss > 1 ? 's have' : ' has'} no ${esc(langName(B.lang))} text yet (marked "no ${B.lang.toUpperCase()}", shown in ${esc(langName(L1()))}). ${esc(langName(B.lang))} CVs leave those items out; a job or education entry without it can't be shown, so add those first. Edit an item to write its ${esc(langName(B.lang))} text.</div>` + h;
   left.innerHTML = h; left.scrollTop = scroll;
 }
 
@@ -730,8 +811,9 @@ $('bLeft').addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act, id = b.dataset.id;
   if (act === 'edit') return openForm(() => {
-    if (id.endsWith(DESC)) { const d = findOwner(id.slice(0, -DESC.length)).description || {}; startForm(id, EN(d), typeof d === 'string' ? d : d.pt, null); }
-    else { const it = findItem(id); if (it) startForm(id, it.en, it.pt, (it.tags || []).join(', ')); else B.editing = id; }  // else: a skill line
+    if (id.endsWith(DESC)) startForm(id, findOwner(id.slice(0, -DESC.length)).description, null);
+    else if (findItem(id)) { const it = findItem(id); startForm(id, it, (it.tags || []).join(', ')); }
+    else { B.editing = findOwner(id) ? 'entry:' + id : id; B.touched = false; }  // an entry's own fields, or a skill line
   });
   if (act === 'cancel') { B.editing = null; B.form = null; B.ver = null; drawBuilder(); return; }
   if (act === 'addbullet') return openForm(() => startForm('new:' + id, '', '', (findOwner(id).tags || []).join(', ')));
@@ -762,7 +844,7 @@ $('bLeft').addEventListener('click', async e => {
   }
   if (act === 'version') return openForm(() => {  // the version panel: the box starts as a copy of the item
     const it = findItem(id); B.editing = 'ver:' + id;
-    B.ver = {id, lang: B.lang, orig: {en: it.en, pt: it.pt}, en: it.en, pt: it.pt, tags: (it.tags || []).join(', '), note: '', drafts: [], busy: false, status: '', error: ''};
+    B.ver = {id, lang: B.lang, orig: textsOf(it), texts: textsOf(it), tags: (it.tags || []).join(', '), note: '', drafts: [], busy: false, status: '', error: ''};
   });
   if (act === 'genon') {
     if (!await ask('Turn on drafted wording?', 'This sets CV_ALLOW_GENERATION. Drafts never reach a CV unless you save or approve the exact text.', 'Turn on')) return;
@@ -772,7 +854,7 @@ $('bLeft').addEventListener('click', async e => {
   if (act === 'verlang') { keepVer(); B.ver.lang = b.dataset.l; drawBuilder(); focusForm(); return; }  // keepVer saves the text first
   if (act === 'usedraft') {  // both languages into the box; set the box too, since a redraw reads it back
     const d = B.ver.drafts[+b.dataset.i]; document.querySelector('[data-form="ver"] [data-v=text]').value = d[B.ver.lang];
-    B.ver.en = d.en; B.ver.pt = d.pt; drawBuilder(); return;
+    B.ver.texts = textsOf(d); drawBuilder(); return;
   }
   if (act === 'savever') {
     keepVer(); const v = B.ver, src = v.id;
@@ -780,18 +862,20 @@ $('bLeft').addEventListener('click', async e => {
     const isSum = B.m.summaries.some(x => x.id === src);
     const taken = new Set([...B.m.summaries.map(x => x.id), ...owners().flatMap(o => o.bullets.map(x => x.id))]);
     const newId = [src + 'v', src + 'v2', src + 'v3', src + 'v4', src + 'v5', src + 'v6'].find(x => !taken.has(x));
-    if (v.en.trim() === it.en.trim() && v.pt.trim() === it.pt.trim()) { toast('This is the same text as the original. Change it, or pick a draft.', 'bad'); return; }
-    const same = ['en', 'pt'].filter(l => v[l].trim() === it[l].trim());
-    if (same.length === 1 && !await ask(`Save with the original ${LANG_NAME[same[0]]}?`, `The ${LANG_NAME[same[0]]} text is still the original's.`, 'Save anyway')) return;
+    const orig = textsOf(it), codes = LANGS.map(l => l.code);
+    if (sameTexts(v.texts, orig)) { toast('This is the same text as the original. Change it, or pick a draft.', 'bad'); return; }
+    if (!(v.texts[codes[0]] || '').trim()) { toast(`Write the ${langName(codes[0])} text first.`, 'bad'); return; }
+    const same = codes.filter(c => (v.texts[c] || '').trim() && v.texts[c].trim() === (orig[c] || '').trim());
+    if (same.length && !await ask(`Save with the original ${langName(same[0])}?`, `The ${langName(same[0])} text is still the original's.`, 'Save anyway')) return;
     const r = await edit('add', {kind: isSum ? 'summary' : 'bullet', parent: isSum ? null : it.owner, after: src,
-                                 data: {id: newId, alt_of: (it.alt_of || []).length ? it.alt_of : [src], en: v.en, pt: v.pt, tags: v.tags}});
+                                 data: {id: newId, alt_of: (it.alt_of || []).length ? it.alt_of : [src], ...v.texts, tags: v.tags}});
     if (r) { B.ver = null; toast(`Saved ${newId}.`, 'ok'); }
     return;
   }
   if (act === 'save') {
     keepForm(); const f = B.form;
-    if (!f.en.trim() || !f.pt.trim()) { toast(`Write both texts first: the ${LANG_NAME[f.en.trim() ? 'pt' : 'en']} one is empty.`, 'bad'); return; }
-    const data = {en: f.en, pt: f.pt, tags: f.tags ?? ''};
+    if (!await textsReady(f.texts)) return;
+    const data = {...f.texts, tags: f.tags ?? ''};
     let r;
     if (id.startsWith('new:')) {
       const what = id.slice(4);
@@ -802,17 +886,37 @@ $('bLeft').addEventListener('click', async e => {
   }
   if (act === 'savedesc') {
     keepForm(); const f = B.form;
-    if (await edit('update', {id: id.slice(0, -DESC.length), changes: {description: {en: f.en, pt: f.pt}}})) toast('Saved.', 'ok');
+    if (!await textsReady(f.texts)) return;
+    if (await edit('update', {id: id.slice(0, -DESC.length), changes: {description: f.texts}})) toast('Saved.', 'ok');
     return;
   }
   if (act === 'savecat') {
-    const v = formVals(id), items = v.items.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [en, pt] = l.split('|').map(x => x.trim()); return {en, pt: pt || en}; });
-    const category = {en: v.cen.trim(), pt: v.cpt.trim() || v.cen.trim()};
-    const r = id.startsWith('new:cat:') ? await edit('add', {kind: 'skill_category', parent: id.slice(8), data: {category, items: items.map(i => i.en)}})
+    const v = formVals(id), codes = LANGS.map(l => l.code);
+    // "a | b" gives each language its text; a line without "|" is the same in every language
+    const items = v.items.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const p = l.split('|').map(x => x.trim()); return Object.fromEntries(codes.map((c, i) => [c, p[i] || p[0]])); });
+    const category = Object.fromEntries(codes.map(c => [c, (v['c-' + c] || '').trim()]));  // an empty name stays missing (marked)
+    if (!category[codes[0]]) { toast(`Give the line a name in ${langName(codes[0])}.`, 'bad'); return; }
+    const r = id.startsWith('new:cat:') ? await edit('add', {kind: 'skill_category', parent: id.slice(8), data: {category, items}})
                                        : await edit('update', {id, changes: {category, items, required: v.required, min_items: v.min ? +v.min : null}});
     if (r) toast('Saved.', 'ok');
+    return;
+  }
+  if (act === 'addentry') return openForm(() => { B.editing = 'newentry:' + id; B.touched = false; });
+  if (act === 'saveentry') {
+    const {kind, data} = entryData(id);
+    const r = id.startsWith('newentry:') ? await edit('add', {kind, data}) : await edit('update', {id: id.slice(6), changes: data});
+    if (r) toast(id.startsWith('newentry:') ? `Added ${r.new_id}.` : 'Saved.', 'ok');
   }
 });
+// the primary text is required; a missing second language is allowed after a question
+async function textsReady(texts){
+  const [first, ...rest] = LANGS;
+  if (!(texts[first.code] || '').trim()) { toast(`Write the ${first.name} text first.`, 'bad'); return false; }
+  const empty = rest.filter(l => !(texts[l.code] || '').trim());
+  if (empty.length && !await ask(`Save without ${empty[0].name}?`, `${empty[0].name} CVs leave this item out until you add its ${empty[0].name} text.`, 'Save anyway')) return false;
+  return true;
+}
+$('bLeft').addEventListener('input', e => { if (e.target.closest('[data-form]') && B.editing && !B.form && !B.ver) B.touched = true; });
 // keyboard in forms: Ctrl+Enter saves (in the note box: generates), Esc cancels
 $('bLeft').addEventListener('keydown', async e => {
   const form = e.target.closest('.bform, .vpanel'); if (!form) return;
@@ -922,7 +1026,11 @@ async function showRate(key){
   drawStars(); drawRateList(); drawRateLang(); noteState();
   $('rateCv').srcdoc = await api('rate_cv', key, rlang); $('rateJob').textContent = await api('rate_job', key);
 }
-function drawRateLang(){ seg($('rateLang'), rlang, async l => { rlang = l; drawRateLang(); if (cur) $('rateCv').srcdoc = await api('rate_cv', cur, rlang); }); }
+function drawRateLang(){
+  const it = items.find(x => x.key === cur), opts = (it?.langs || LANGS.map(l => l.code)).map(c => [c, c.toUpperCase()]);
+  if (!opts.some(o => o[0] === rlang)) rlang = it?.lang || opts[0][0];
+  seg($('rateLang'), rlang, async l => { rlang = l; drawRateLang(); if (cur) $('rateCv').srcdoc = await api('rate_cv', cur, rlang); }, opts);
+}
 function drawStars(){ $('stars').innerHTML = [1,2,3,4,5].map(n => `<button class="${picked === n ? 'sel' : ''}" onclick="rateIt(${n})" title="Rate ${n} (key ${n})">${n}</button>`).join(''); }
 async function rateIt(n){
   if (!cur) return;
@@ -953,7 +1061,8 @@ async function loadSetup(){
     <div class="row"><button onclick="api('open_folder','data')">Open data folder</button><button onclick="api('open_folder','output')">Open PDF folder</button>
     <button onclick="importData()">Import data from a folder...</button></div></div>`;
   h += `<div class="card"><h3>Master resume</h3><p class="${s.master_ok ? 'ok' : 'bad'}" style="white-space:pre-wrap">${s.master_ok ? 'OK: ' : ''}${esc(s.master)}</p>
-    <div class="row"><button onclick="showTab('master')">Edit in the Master tab</button><button onclick="api('open_master')">Open master.yaml</button><span class="muted small">The app reads it on every run.</span></div></div>`;
+    <div class="row">${s.master_missing ? `<button class="primary" onclick="showTab('welcome')">Set up your master resume</button>`
+      : `<button onclick="showTab('master')">Edit in the Master tab</button><button onclick="api('open_master')">Open master.yaml</button>`}<span class="muted small">The app reads it on every run.</span></div></div>`;
   h += `<div class="card"><h3>PDF engine</h3><p class="${s.browser ? 'ok' : 'warn'}">${s.browser ? 'Using ' + esc(s.browser) : 'No Edge or Chrome found: PDFs need WeasyPrint.'}</p></div>`;
   if (s.local) {
     h += `<div class="card"><h3>Ollama</h3>`;
@@ -1026,10 +1135,23 @@ function drawPresets(){
   }
   $('preset-quality').closest('.field').style.display = fieldVal('CV_LLM_BASE_URL') ? '' : 'none';  // presets are for the local engine
 }
+function langFieldHtml(){
+  const L = state?.languages, all = state?.language_choices || [];
+  if (!L) return `<div class="field"><label><b>Languages</b><br><span class="muted small">of your CVs</span></label><div class="muted small">${state?.master_missing
+    ? 'Create your master first: <button class="mini" onclick="showTab(\'welcome\')">Set up</button>' : 'master.yaml has problems (see Setup), so its languages can\'t be changed here.'}</div></div>`;
+  const opt = (c, cur) => `<option value="${c.code}" ${c.code === cur ? 'selected' : ''}>${esc(c.name)}</option>`;
+  return `<div class="field"><label><b>Languages</b><br><span class="muted small">of your CVs (kept in master.yaml)</span></label><div>
+    <div class="row"><label class="small">Main <select id="langPrimary">${all.map(c => opt(c, L.primary)).join('')}</select></label>
+      <label class="small">Second <select id="langSecondary"><option value="">None</option>${all.map(c => opt(c, L.secondary)).join('')}</select></label></div>
+    <div class="muted small">Every item has a text per language. The main one is required everywhere, and the model reads it.
+      Changing languages never deletes or translates text: items without the second language are left out of its CVs until you add it (the Master tab marks them).</div></div></div>`;
+}
+const langChoice = () => $('langPrimary') ? {primary: $('langPrimary').value, secondary: $('langSecondary').value || null} : null;
 async function loadSettings(){
+  await refreshState();
   SET = await api('get_settings'); SET.dirty = false; $('settingsFile').textContent = SET.file; $('settingsMsg').textContent = '';
   const simple = SET.fields.filter(f => f.level === 'simple'), adv = SET.fields.filter(f => f.level !== 'simple');
-  $('settingsForm').innerHTML =
+  $('settingsForm').innerHTML = langFieldHtml() +
     `<div class="field"><label><b>Engine</b><br><span class="muted small">where the model runs</span></label><div class="preset" id="preset-engine"></div></div>
      <div class="field"><label><b>Quality</b><br><span class="muted small">the default on the New CV tab</span></label><div class="preset" id="preset-quality"></div></div>` +
     simple.map(fieldHtml).join('') +
@@ -1047,15 +1169,157 @@ function settingsChanged(e){
 $('settingsForm').addEventListener('change', settingsChanged);
 $('settingsForm').addEventListener('input', e => { if (e.target.matches('input[data-key]')) { SET.dirty = true; $('settingsMsg').innerHTML = '<span class="warn">Not saved yet.</span>'; } });
 $('saveSettings').onclick = async () => {
+  const lc = langChoice(), L = state?.languages;
+  if (lc && L && (lc.primary !== L.primary || (lc.secondary || null) !== (L.secondary || null))) {
+    const r = await api('set_languages', lc.primary, lc.secondary);
+    if (!r.ok) { tell('Languages not changed', (r.errors || []).join('\n')); return; }
+    const names = [lc.primary, lc.secondary].filter(Boolean).map(langName).join(' + ');
+    toast(`Languages: ${names}.` + (r.missing && lc.secondary ? `\n${r.missing} text${r.missing > 1 ? 's have' : ' has'} no ${langName(lc.secondary)} yet: the Master tab marks them.` : ''), 'ok', 8000);
+  }
   const v = {}; document.querySelectorAll('#settingsForm [data-key]').forEach(e => v[e.dataset.key] = e.value);
   await api('save_settings', v); SET.dirty = false; $('settingsMsg').textContent = 'Saved.'; toast('Settings saved.', 'ok');
-  quality = undefined; refreshState();
+  quality = undefined; await refreshState();
 };
+
+// ---------------------------------------------------------------- setup wizard
+// For a first run without master.yaml: the languages and the basics (you, a summary,
+// your jobs with a few bullets, education). It writes a first master.yaml; everything
+// else is added in the Master tab. Nothing here is written for you: every text is yours.
+const WSTEPS = ['Languages', 'About you', 'Summary', 'Experience', 'Education', 'Create'];
+const newJob = () => ({title: {}, company: '', location: '', start: '', end: '', current: false, bullets: [{tags: ''}]});
+const newEdu = () => ({degree: {}, institution: '', start: '', end: '', expected: false});
+let W = null;
+function wizInit(){
+  W = {step: 0, primary: 'en', secondary: '', summary: {tags: ''}, jobs: [newJob()], education: [],
+       profile: {name: '', email: '', phone: '', location: '', headline: {}, links: [{label: 'LinkedIn', url: ''}, {label: 'GitHub', url: ''}]}};
+}
+const wl = () => [W.primary, ...(W.secondary ? [W.secondary] : [])];
+const wname = c => ((state?.language_choices || []).find(l => l.code === c) || {name: c}).name;
+function wget(path){ return path.split('.').reduce((o, k) => o == null ? undefined : o[k], W); }
+function wset(path, val){ const ks = path.split('.'), last = ks.pop(); const o = ks.reduce((o, k) => o[k] ??= {}, W); o[last] = val; }
+const wIn = (path, label, ph = '') => `<label class="small"><span>${label}</span><input type="text" data-w="${path}" value="${esc(wget(path) ?? '')}" placeholder="${esc(ph)}"></label>`;
+const wPer = (path, label, area = false, ph = '') => wl().map(c => {
+  const lab = esc(label) + (wl().length > 1 ? ` <span class="muted">(${esc(wname(c))})</span>` : ''), v = esc(wget(path + '.' + c) ?? '');
+  return area ? `<label class="small"><span>${lab}</span><textarea data-w="${path}.${c}" placeholder="${esc(ph)}">${v}</textarea></label>`
+              : `<label class="small"><span>${lab}</span><input type="text" data-w="${path}.${c}" value="${v}" placeholder="${esc(ph)}"></label>`; }).join('');
+const DATE_RE = /^\d{4}(-(0[1-9]|1[0-2]))?$/;
+function wizProblems(step){
+  const p = [], first = W.primary, fname = wname(first);
+  if (step === 1 && !W.profile.name.trim()) p.push('Your name is needed.');
+  if (step === 2) { if (!(W.summary[first] || '').trim()) p.push(`Write the summary in ${fname}.`); if (!W.summary.tags.trim()) p.push('Give the summary a few tags.'); }
+  if (step === 3) {
+    if (!W.jobs.length) p.push('Add at least one job.');
+    W.jobs.forEach((j, i) => { const n = `Job ${i + 1}`;
+      if (!(j.title[first] || '').trim()) p.push(`${n}: the title in ${fname}.`);
+      if (!DATE_RE.test(j.start.trim())) p.push(`${n}: the start date as YYYY-MM or YYYY.`);
+      if (!j.current && j.end.trim() && !DATE_RE.test(j.end.trim())) p.push(`${n}: the end date as YYYY-MM or YYYY (or tick "I work here now").`);
+      if (!j.current && !j.end.trim()) p.push(`${n}: an end date, or tick "I work here now".`);
+      const bs = j.bullets.filter(b => (b[first] || '').trim());
+      if (!bs.length) p.push(`${n}: at least one bullet in ${fname}.`);
+      if (bs.some(b => !b.tags.trim())) p.push(`${n}: tags for each bullet.`); });
+  }
+  if (step === 4) W.education.forEach((e, i) => { const n = `Education ${i + 1}`;
+    if (!(e.degree[first] || '').trim() || !e.institution.trim()) p.push(`${n}: the degree (in ${fname}) and the school.`);
+    if (!DATE_RE.test(e.start.trim()) || (e.end.trim() && !DATE_RE.test(e.end.trim()))) p.push(`${n}: dates as YYYY-MM or YYYY.`); });
+  return p;
+}
+function drawWizard(){
+  if (!W) wizInit();
+  const st = W.step, two = wl().length > 1;
+  let h = `<div class="card"><h3 style="font-size:17px">Set up your master resume</h3>
+    <p class="muted" style="margin:0">Every CV is picked from it. Start with the basics; you can add more jobs, projects, skills and other versions of each item in the Master tab later.</p>
+    <div class="wsteps">${WSTEPS.map((x, i) => `<span class="${i === st ? 'on' : i < st ? 'done' : ''}">${i < st ? '✓ ' : ''}${x}</span>`).join('')}</div>`;
+  if (st === 0) {
+    const opts = (cur, none) => (none ? `<option value="">None: one language only</option>` : '') + (state?.language_choices || []).map(c => `<option value="${c.code}" ${c.code === cur ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+    h += `<div class="wgrid"><label class="small">Main language<select data-w="primary">${opts(W.primary)}</select></label>
+      <label class="small">Second language (optional)<select data-w="secondary">${opts(W.secondary, true)}</select></label></div>
+      <p class="small muted">You write each text in both languages, and each CV comes out in one of them: the posting's language when it is one of yours, otherwise the main one. The main language is required on everything; the second can be filled in over time. You can change both later in Settings.</p>
+      <p class="small">Already have a master.yaml or an old data folder? <button class="mini" onclick="wizImport()">Import it instead</button></p>`;
+  }
+  if (st === 1) h += `<div class="wgrid">${wIn('profile.name', 'Full name')}${wIn('profile.location', 'Location (optional)', 'e.g. Lisbon, Portugal')}
+      ${wIn('profile.email', 'Email (optional)')}${wIn('profile.phone', 'Phone (optional)')}</div>
+      ${wPer('profile.headline', 'Optional line under your name', false, 'e.g. Data Engineer')}
+      <b class="small">Links (optional)</b><div class="wgrid">${W.profile.links.map((l, i) => wIn(`profile.links.${i}.label`, 'Label') + wIn(`profile.links.${i}.url`, 'URL', 'https://...')).join('')}</div>
+      <button class="mini" data-wact="addlink" style="justify-self:start">+ link</button>`;
+  if (st === 2) h += `${wPer('summary', 'Summary', true, 'Two or three sentences on who you are professionally and what you do best.')}
+      ${wIn('summary.tags', 'Tags (comma separated)', 'e.g. data-engineering, python, cloud')}
+      <p class="small muted">Tags are a few lowercase words that say what an item shows (use hyphens inside a tag, e.g. data-engineering). They help match your items to a job posting. You can add other summaries later and the CV picks the best fit.</p>`;
+  if (st === 3) {
+    h += W.jobs.map((j, i) => `<div class="wblock"><div class="row"><b class="grow">Job ${i + 1}</b>${W.jobs.length > 1 ? `<button class="mini" data-wact="deljob" data-i="${i}">Remove</button>` : ''}</div>
+      ${wPer(`jobs.${i}.title`, 'Job title', false, 'e.g. Data Engineer')}
+      <div class="wgrid">${wIn(`jobs.${i}.company`, 'Company (empty for freelance work)')}${wIn(`jobs.${i}.location`, 'Location (optional)')}
+        ${wIn(`jobs.${i}.start`, 'Start (YYYY-MM)', '2021-03')}${j.current ? '<span></span>' : wIn(`jobs.${i}.end`, 'End (YYYY-MM)', '2024-06')}</div>
+      <label class="small" style="display:flex;gap:6px"><input type="checkbox" data-w="jobs.${i}.current" ${j.current ? 'checked' : ''}> I work here now</label>
+      ${j.bullets.map((b, k) => `<div class="wblock" style="margin:0"><div class="row"><b class="small grow">Bullet ${k + 1}</b>${j.bullets.length > 1 ? `<button class="mini" data-wact="delbullet" data-i="${i}" data-k="${k}">Remove</button>` : ''}</div>
+        ${wPer(`jobs.${i}.bullets.${k}`, 'What you did', true, 'One sentence: what you built or achieved, and the result.')}
+        ${wIn(`jobs.${i}.bullets.${k}.tags`, 'Tags (comma separated)', 'e.g. python, airflow')}</div>`).join('')}
+      <button class="mini" data-wact="addbullet" data-i="${i}" style="justify-self:start">+ bullet</button></div>`).join('') +
+      `<button data-wact="addjob">+ another job</button><p class="small muted">List them newest first or in any order: the CV sorts them by date. Each CV shows every job, with the bullets that fit the posting best, so write a few per job (more can be added in the Master tab).</p>`;
+  }
+  if (st === 4) h += (W.education.map((e, i) => `<div class="wblock"><div class="row"><b class="grow">Education ${i + 1}</b><button class="mini" data-wact="deledu" data-i="${i}">Remove</button></div>
+      ${wPer(`education.${i}.degree`, 'Degree', false, 'e.g. BSc in Computer Science')}${wIn(`education.${i}.institution`, 'School')}
+      <div class="wgrid">${wIn(`education.${i}.start`, 'Start (YYYY-MM or YYYY)', '2014')}${wIn(`education.${i}.end`, 'End (YYYY-MM or YYYY)', '2018')}</div>
+      <label class="small" style="display:flex;gap:6px"><input type="checkbox" data-w="education.${i}.expected" ${e.expected ? 'checked' : ''}> not finished yet (the end date is expected)</label></div>`).join('')
+      || '<p class="muted">Optional. Skip it if you prefer; it can be added in the Master tab.</p>') + `<button data-wact="addedu">+ education</button>`;
+  if (st === 5) {
+    const jobs = W.jobs.length, bullets = W.jobs.reduce((n, j) => n + j.bullets.filter(b => (b[W.primary] || '').trim()).length, 0);
+    h += `<p>Ready to write your master resume:</p><ul class="small">
+      <li>Languages: ${esc(wl().map(wname).join(' + '))}</li><li>${esc(W.profile.name)}${W.profile.email ? ' · ' + esc(W.profile.email) : ''}</li>
+      <li>1 summary, ${jobs} job${jobs > 1 ? 's' : ''} with ${bullets} bullet${bullets === 1 ? '' : 's'}, ${W.education.length} education entr${W.education.length === 1 ? 'y' : 'ies'}</li></ul>
+      <p class="small muted">Next, in the Master tab: add skills (+ line), projects, more bullets, and other versions of an item. ${two ? `Texts you left empty in ${esc(wname(W.secondary))} are marked there; ${esc(wname(W.secondary))} CVs leave those items out until you add them.` : ''}</p>`;
+  }
+  h += `<div class="row" style="margin-top:14px">${st ? '<button data-wact="back">Back</button>' : ''}<span class="grow"></span>
+    ${st < WSTEPS.length - 1 ? '<button class="primary" data-wact="next">Next</button>' : '<button class="primary" data-wact="create">Create my master resume</button>'}</div></div>`;
+  $('wizard').innerHTML = h;
+}
+$('wizard').addEventListener('input', e => { const k = e.target.dataset.w; if (k) wset(k, e.target.type === 'checkbox' ? e.target.checked : e.target.value); });
+$('wizard').addEventListener('change', e => {
+  const k = e.target.dataset.w; if (!k) return;
+  wset(k, e.target.type === 'checkbox' ? e.target.checked : e.target.value);
+  if (k === 'primary' && W.secondary === W.primary) W.secondary = '';
+  if (k === 'secondary' && W.secondary === W.primary) { W.secondary = ''; toast('The second language must differ from the main one.', 'bad'); }
+  if (e.target.type === 'checkbox' || e.target.tagName === 'SELECT') drawWizard();
+});
+$('wizard').addEventListener('click', async e => {
+  const b = e.target.closest('[data-wact]'); if (!b) return;
+  const a = b.dataset.wact, i = +b.dataset.i;
+  if (a === 'next') { const p = wizProblems(W.step); if (p.length) { tell('A few things are missing', p.join('\n')); return; } W.step++; }
+  if (a === 'back') W.step--;
+  if (a === 'addlink') W.profile.links.push({label: '', url: ''});
+  if (a === 'addjob') W.jobs.push(newJob());
+  if (a === 'deljob') W.jobs.splice(i, 1);
+  if (a === 'addbullet') W.jobs[i].bullets.push({tags: W.jobs[i].bullets.at(-1)?.tags || ''});
+  if (a === 'delbullet') W.jobs[i].bullets.splice(+b.dataset.k, 1);
+  if (a === 'addedu') W.education.push(newEdu());
+  if (a === 'deledu') W.education.splice(i, 1);
+  if (a === 'create') return wizCreate();
+  drawWizard();
+  if (a === 'next' || a === 'back') $('tab-welcome').scrollTop = 0;
+});
+async function wizCreate(){
+  const langs = wl(), keep = o => Object.fromEntries(langs.map(c => [c, (o[c] || '').trim()]).filter(([, v]) => v));
+  const data = {languages: {primary: W.primary, secondary: W.secondary || null},
+    profile: {...W.profile, headline: keep(W.profile.headline), links: W.profile.links.filter(l => l.url.trim())},
+    summary: {...keep(W.summary), tags: W.summary.tags},
+    jobs: W.jobs.map(j => ({title: keep(j.title), company: j.company, location: j.location, start: j.start.trim(), end: j.current ? '' : j.end.trim(),
+                           bullets: j.bullets.filter(b => (b[W.primary] || '').trim()).map(b => ({...keep(b), tags: b.tags}))})),
+    education: W.education.map(e => ({degree: keep(e.degree), institution: e.institution, start: e.start.trim(), end: e.end.trim(), expected: e.expected}))};
+  const r = await api('create_master', data);
+  if (!r.ok) { tell('The master resume was not created', (r.errors || []).join('\n')); return; }
+  W = null; state = r; setLangs(r.languages?.list); await refreshState();
+  toast('Your master resume is ready. Add skills, projects and more bullets here.', 'ok', 7000);
+  showTab('master');
+}
+async function wizImport(){
+  await importData(); await refreshState();
+  if (!state.master_missing) { toast('Imported. Your master resume is in the Master tab.', 'ok'); showTab('master'); }
+}
 
 placeholder($('newPreview'), 'Your tailored CV appears here.');
 window.addEventListener('pywebviewready', async () => {
   const s = await refreshState();
-  if (s.local && !(s.ollama?.running) || !s.master_ok) showTab('setup');
+  if (s.master_missing) showTab('welcome');  // first run: set up the master resume
+  else if (s.local && !(s.ollama?.running) || !s.master_ok) showTab('setup');
 });
 </script>
 </body></html>

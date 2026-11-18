@@ -34,6 +34,7 @@ def _note(text: str, n: int = 70) -> str:
 
 def to_annotated_yaml(sel: Selection, master: Master, errors: Optional[list[str]] = None) -> str:
     idx = item_index(master)
+    lang = master.primary
     out: list[str] = []
     if errors:
         out.append(ERROR_MARK + "The edit was rejected. Fix these problems and save again:")
@@ -43,7 +44,7 @@ def to_annotated_yaml(sel: Selection, master: Master, errors: Optional[list[str]
 
     def line(indent: str, id_: str, commented: bool = False, dash: bool = True) -> str:
         it = idx.get(id_)
-        note = _note(item_text(it, "en")) if it else "(unknown id)"
+        note = _note(item_text(it, lang)) if it else "(unknown id)"
         alt = getattr(it.obj, "alt_of", None) if it else None
         if alt:
             note = f"[alt of {', '.join(alt)}] " + note
@@ -53,17 +54,17 @@ def to_annotated_yaml(sel: Selection, master: Master, errors: Optional[list[str]
 
     # summary
     s = idx.get(sel.summary_id)
-    note = _note(item_text(s, "en")) if s else "(unknown id)"
+    note = _note(item_text(s, lang)) if s else "(unknown id)"
     out.append(f"summary_id: {sel.summary_id}   # {note}")
     for alt in master.summaries:
         if alt.id != sel.summary_id:
-            out.append(f"# summary_id: {alt.id}   # {_note(alt.en)}")
+            out.append(f"# summary_id: {alt.id}   # {_note(alt.get(lang))}")
 
     # headline options
-    heads = {h.id: h.en for h in master.profile.headline_alts}
+    heads = {h.id: h.get(lang) for h in master.profile.headline_alts}
     if heads or sel.headline_id:
         cur = sel.headline_id or "default"
-        options = {"default": text_of(master.profile.headline, "en") if master.profile.headline else "", **heads}
+        options = {"default": text_of(master.profile.headline, lang) if master.profile.headline else "", **heads}
         out.append(f"headline_id: {cur}   # {_note(options.get(cur, '(unknown id)'))}")
         for hid, text in options.items():
             if hid != cur:
@@ -87,7 +88,7 @@ def to_annotated_yaml(sel: Selection, master: Master, errors: Optional[list[str]
         chosen = sel.bullets.get(o.id, [])
         hide_key = o.id not in jobs and o.id not in sel.bullets
         key = f"  # {o.id}:" if hide_key else f"  {o.id}:"
-        out.append(f"{key}   # {_note(item_text(idx[o.id], 'en'))}")
+        out.append(f"{key}   # {_note(item_text(idx[o.id], lang))}")
         for bid in chosen:
             out.append(line("    ", bid))
         for b in o.bullets:
@@ -106,7 +107,7 @@ def to_annotated_yaml(sel: Selection, master: Master, errors: Optional[list[str]
     if with_alts or stray:
         out.append("descriptions:   # job or project -> one of its description alternatives; 'default' keeps the default")
         for o in with_alts:
-            options = {"default": text_of(o.description, "en"), **{d.id: d.en for d in o.description_alts}}
+            options = {"default": text_of(o.description, lang), **{d.id: d.get(lang) for d in o.description_alts}}
             chosen = sel.descriptions.get(o.id, "default")
             out.append(f"  {o.id}: {chosen}   # {_note(options.get(chosen, '(unknown id)'))}")
             for opt, text in options.items():
@@ -134,7 +135,7 @@ def to_annotated_yaml(sel: Selection, master: Master, errors: Optional[list[str]
             c = cats.get(cid)
             if c is None:
                 continue
-            own = [text_of(i, "en") for i in c.items]
+            own = [text_of(i, lang) for i in c.items]
             if cid in sel.skill_items:
                 chosen = sel.skill_items[cid]
                 out.append(f"  {cid}:")

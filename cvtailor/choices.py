@@ -279,11 +279,11 @@ def build_schema(m: Master, plain: dict[str, Any], count_limits: bool,
                 if count_limits:  # required categories of this layout set the minimum
                     arr = {**arr, "minItems": sum(1 for c in ids if cats[c].required), "maxItems": len(ids)}
                 tiers[t] = arr
-            # Per category: a rank for each of its own items (exact English text), so
+            # Per category: a rank for each of its own items (exact primary-language text), so
             # items can be dropped (0) or reordered but never repeated or moved.
             item_props = {}
             for cid in (c for t in TIERS for c in lay[t]):
-                own = [skill_item_text(x, "en") for x in cats[cid].items]
+                own = [skill_item_text(x, m.primary) for x in cats[cid].items]
                 item_props[cid] = _ranks(own, len(own), at_least_one=False,
                                          min_count=cats[cid].min_items or 0)
             branches.append({
@@ -340,7 +340,7 @@ def decode(data: dict[str, Any], master: Master | None = None) -> dict[str, Any]
         items = skills.get("items")
         if isinstance(items, dict):
             chosen = {c for t in TIERS for c in order[t]}
-            full = ({c.id: [skill_item_text(x, "en") for x in c.items] for t in TIERS for c in master.skills.tier(t)}
+            full = ({c.id: [skill_item_text(x, master.primary) for x in c.items] for t in TIERS for c in master.skills.tier(t)}
                     if master is not None else {})
             ranked = {cid: _ranked(v) for cid, v in items.items()}
             d["skill_items"] = {cid: texts for cid, texts in ranked.items()

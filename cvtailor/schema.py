@@ -7,15 +7,19 @@ limits...) live in master.check_master so that every problem is reported at once
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from typing import Any, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, RootModel, field_validator, model_serializer,
+                      model_validator)
+
+from .langs import DEFAULT_PRIMARY, LANGUAGES, LEGACY_SECONDARY, normalize
 
 # languages renders last, one line per category, after the working/familiar lines.
 TIERS = ("hands_on", "working", "familiar", "languages")
 SECTIONS = ("summary", "experience", "projects", "skills", "education")
-Lang = Literal["en", "pt"]
 Section = Literal["summary", "experience", "projects", "skills", "education"]
+_LANG_KEY = re.compile(r"^[a-z]{2}$")
 
 
 class _Strict(BaseModel):
@@ -37,24 +41,112 @@ def _coerce_date(v: Any) -> Any:
     return v
 
 
+def _known_codes(v: dict[str, str]) -> dict[str, str]:
+    bad = [k for k in v if k not in LANGUAGES]
+    if bad:
+        raise ValueError(f"unknown language {', '.join(repr(b) for b in bad)} "
+                         f"(known: {', '.join(LANGUAGES)})")
+    return v
+
+
 # ---------------------------------------------------------------- master
 
-class Bilingual(_Strict):
-    en: str
-    pt: str
+class Texts(RootModel[dict[str, str]]):
+    """One text per language: {en: ..., es: ...}. A language may be missing (the master
+    checks require the primary one)."""
+
+    @field_validator("root")
+    @classmethod
+    def _codes(cls, v: dict[str, str]) -> dict[str, str]:
+        return _known_codes(v)
 
     def get(self, lang: str) -> str:
-        return self.pt if lang == "pt" else self.en
+        return self.root.get(lang) or ""
+
+    @property
+    def texts(self) -> dict[str, str]:
+        return self.root
 
 
-# A string used as-is in both languages, or an {en, pt} pair.
-Text = Union[str, Bilingual]
+# A string used as-is in every language, or one text per language.
+Text = Union[str, Texts]
 
 
-def text_of(value: Optional[Text], lang: str = "en") -> str:
+class _Texted(_Strict):
+    """An item whose texts are top-level keys named by language (id, tags, en, es...)."""
+
+    texts: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _collect(cls, v: Any) -> Any:
+        if isinstance(v, dict):
+            found = {k: x for k, x in v.items()
+                     if isinstance(k, str) and k not in cls.model_fields and _LANG_KEY.match(k)}
+            if found:
+                v = {k: x for k, x in v.items() if k not in found}
+                v["texts"] = {**(v.get("texts") or {}), **found}
+        return v
+
+    @field_validator("texts")
+    @classmethod
+    def _codes(cls, v: dict[str, str]) -> dict[str, str]:
+        return _known_codes(v)
+
+    @model_serializer(mode="wrap")
+    def _flat(self, handler: Any) -> Any:
+        d = handler(self)
+        if not isinstance(d, dict) or "texts" not in d:
+            return d
+        texts = d.pop("texts") or {}
+        out: dict[str, Any] = {} if "id" in d else dict(texts)
+        for k, val in d.items():
+            out[k] = val
+            if k == "id":
+                out.update(texts)
+        return out
+
+    def get(self, lang: str) -> str:
+        return self.texts.get(lang) or ""
+
+
+def text_of(value: Any, lang: str) -> str:
+    """The text of a Text (or an item) in one language; "" when it has none."""
     if value is None:
         return ""
     return value if isinstance(value, str) else value.get(lang)
+
+
+def has_text(value: Any, lang: str) -> bool:
+    return value is None or isinstance(value, str) or bool(value.get(lang).strip())
+
+
+class Languages(_Strict):
+    """The CV's languages. The secondary one is optional."""
+    primary: str = DEFAULT_PRIMARY
+    secondary: Optional[str] = None
+
+    @field_validator("primary", "secondary", mode="before")
+    @classmethod
+    def _code(cls, v: Any) -> Any:
+        if v is None or str(v).strip().lower() in ("", "none", "null", "-"):
+            return None
+        code = normalize(v)
+        if code not in LANGUAGES:
+            raise ValueError(f"unknown language '{v}' (known: {', '.join(LANGUAGES)})")
+        return code
+
+    @model_validator(mode="after")
+    def _distinct(self) -> "Languages":
+        if self.primary is None:
+            raise ValueError("languages.primary is required")
+        if self.secondary == self.primary:
+            raise ValueError("the secondary language must differ from the primary one")
+        return self
+
+    @property
+    def codes(self) -> list[str]:
+        return [self.primary] + ([self.secondary] if self.secondary else [])
 
 
 class Link(_Strict):
@@ -62,12 +154,10 @@ class Link(_Strict):
     url: str
 
 
-class HeadlineAlt(_Strict):
+class HeadlineAlt(_Texted):
     """Another line under the name (e.g. "Analytics Engineer"); the selection may pick one."""
     id: str
     tags: list[str] = Field(default_factory=list)
-    en: str
-    pt: str
 
 
 class Profile(_Strict):
@@ -80,11 +170,9 @@ class Profile(_Strict):
     links: list[Link] = Field(default_factory=list)
 
 
-class Summary(_Strict):
+class Summary(_Texted):
     id: str
     tags: list[str]
-    en: str
-    pt: str
     headline: Optional[Text] = None  # replaces profile.headline when this summary is selected
     # Alternative versions: never selected together with these ids, or with other
     # alternatives of the same ids.
@@ -96,11 +184,9 @@ class Summary(_Strict):
     coerce_alt = field_validator("alt_of", mode="before")(_as_list)
 
 
-class Bullet(_Strict):
+class Bullet(_Texted):
     id: str
     tags: list[str]
-    en: str
-    pt: str
     alt_of: list[str] = Field(default_factory=list)  # alternative versions of these bullets
     origin: Optional[Literal["rephrase", "merge", "new"]] = None
     based_on: list[str] = Field(default_factory=list)
@@ -108,12 +194,10 @@ class Bullet(_Strict):
     coerce_alt = field_validator("alt_of", mode="before")(_as_list)
 
 
-class DescriptionAlt(_Strict):
+class DescriptionAlt(_Texted):
     """An alternative to a job's or project's description; the selection picks one."""
     id: str
     tags: list[str]
-    en: str
-    pt: str
     # Bullets of the same job or project whose content this description already covers;
     # they are never selected together with it.
     alt_of: list[str] = Field(default_factory=list)
@@ -123,7 +207,7 @@ class DescriptionAlt(_Strict):
 
 class Job(_Strict):
     id: str
-    title: Bilingual
+    title: Texts
     company: Optional[str] = None  # omit for freelance work and similar
     start: str
     end: Optional[str] = None
@@ -155,7 +239,7 @@ class Project(_Strict):
 class Education(_Strict):
     id: str
     institution: Text
-    degree: Bilingual
+    degree: Texts
     note: Optional[Text] = None  # e.g. honours, shown after the institution
     start: str
     end: Optional[str] = None
@@ -173,7 +257,7 @@ skill_item_text = text_of
 
 class SkillCategory(_Strict):
     id: str
-    category: Bilingual
+    category: Texts
     items: list[SkillItem]
     # Alternative groupings: never selected together with these categories. Skills may
     # repeat between a category and its alternatives.
@@ -211,6 +295,9 @@ class Layout(_Strict):
 
 
 class Master(_Strict):
+    # Without this key: English and Brazilian Portuguese (files written before it existed).
+    languages: Languages = Field(default_factory=lambda: Languages(primary=DEFAULT_PRIMARY,
+                                                                   secondary=LEGACY_SECONDARY))
     profile: Profile
     summaries: list[Summary]
     jobs: list[Job]
@@ -225,6 +312,15 @@ class Master(_Strict):
     @classmethod
     def _none_aliases(cls, v: Any) -> Any:
         return {} if v is None else v
+
+    @property
+    def langs(self) -> list[str]:
+        """The CV's languages, primary first."""
+        return self.languages.codes
+
+    @property
+    def primary(self) -> str:
+        return self.languages.primary
 
 
 # ---------------------------------------------------------------- selection
@@ -253,7 +349,8 @@ class Selection(_Strict):
     # Job or project id -> id of one of its description_alts. Absent: the default description.
     descriptions: dict[str, str] = Field(default_factory=dict)
     # Skill category id -> the subset of its own items to show, in this order, each
-    # given by its exact English text. Absent: every item, in master order.
+    # given by its exact text in the primary language (any of its languages is
+    # accepted). Absent: every item, in master order.
     skill_items: dict[str, list[str]] = Field(default_factory=dict)
     # Id of one of profile.headline_alts. Absent: the summary's or the profile's headline.
     headline_id: Optional[str] = None
@@ -301,14 +398,13 @@ class LLMSelection(Selection):
 class Meta(BaseModel):
     company: str
     role_title: str
-    language: Lang = "en"
+    language: str = DEFAULT_PRIMARY  # a code; the pipeline falls back to the primary language
     job_url: Optional[str] = None
 
     @field_validator("language", mode="before")
     @classmethod
     def _lang(cls, v: Any) -> str:
-        v = str(v or "").strip().lower()
-        return "pt" if v in ("pt", "pt-br", "pt_br", "portuguese") else "en"
+        return normalize(v) or DEFAULT_PRIMARY
 
 
 class Variant(_Strict):
@@ -326,5 +422,5 @@ class RenderInput(_Strict):
 
     master: Master
     selection: Selection
-    lang: Lang
+    lang: str
     i18n: dict[str, Any]

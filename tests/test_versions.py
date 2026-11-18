@@ -5,6 +5,7 @@ import pytest
 
 from cvtailor import generation
 from cvtailor.generation import GenerationError, check_version, draft_versions, version_sources
+from cvtailor.schema import Bullet
 from tests.conftest import FakeClient
 
 GOOD = {"en": "Cut batch latency from 6 h to 40 min with Databricks pipelines in PySpark over 2 TB/day of payment events.",
@@ -49,8 +50,7 @@ def test_only_bullets_and_summaries(make_ctx, master):
 
 
 def test_check_version_ignores_sentence_starts():
-    class S:
-        en, pt = "Built pipelines in Python.", "Construí pipelines em Python."
+    S = Bullet(id="s", tags=["t"], en="Built pipelines in Python.", pt="Construí pipelines em Python.")
     d = check_version({"en": "Delivered pipelines in Python. Shipped fast.", "pt": "Entreguei pipelines em Python.", "note": ""}, [S])
     assert d["warnings"] == []
     assert check_version({"en": "", "pt": "x"}, [S]) is None

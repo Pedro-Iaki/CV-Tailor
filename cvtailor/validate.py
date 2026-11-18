@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections import Counter
 
-from .master import alt_conflicts, item_index
-from .schema import TIERS, Master, Selection, skill_item_text
+from .master import alt_conflicts, item_index, skill_item_keys
+from .schema import TIERS, Master, Selection
 
 
 def validate_selection(sel: Selection, master: Master) -> list[str]:
@@ -100,7 +100,7 @@ def validate_selection(sel: Selection, master: Master) -> list[str]:
             errors.append(f"skill_items: category '{cid}' is not in skill_category_order")
         if not texts:
             errors.append(f"skill_items: '{cid}' lists no items (leave the category out instead)")
-        own = {skill_item_text(i, "en") for i in c.obj.items}
+        own = {k for i in c.obj.items for k in skill_item_keys(i)}
         for text in texts:
             if text not in own:
                 errors.append(f"skill_items: '{text}' is not an item of {cid} (items can't move between categories)")

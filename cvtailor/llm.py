@@ -16,6 +16,8 @@ from typing import Any, Callable, Optional
 from pydantic import ValidationError
 
 from . import choices
+from .langs import describe as describe_langs
+from .langs import prompt_name
 from .master import build_llm_index
 from .schema import TIERS, LLMSelection, Master, Meta
 from .validate import validate_selection
@@ -24,7 +26,7 @@ SELECTION_SYSTEM_PROMPT = """\
 You are a resume content selector. You do not write resume text.
 
 You receive (1) a job description and (2) an index of the candidate's master
-resume: items with an id, tags, and English text, plus the jobs, projects,
+resume: items with an id, tags, and text, plus the jobs, projects,
 skill categories, and limits. Jobs and projects both have bullets.
 
 Your job is to choose which existing items to include and in what order so the
@@ -83,23 +85,26 @@ You extract metadata from a job description. Return only JSON matching the schem
 - company: the hiring company's name as written (use the recruiting agency only if
   the employer is not named).
 - role_title: the job title as written in the posting.
-- language: the language the job description is written in: "en" or "pt".
-  Anything other than Portuguese is "en".
+- language: the code of the language the job description is written in: {langs_or}.
+  A posting in any other language is "{primary}".
 - job_url: a URL only if one literally appears in the text and points to the posting,
   else null.
 """
 
-META_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "company": {"type": "string"},
-        "role_title": {"type": "string"},
-        "language": {"type": "string", "enum": ["en", "pt"]},
-        "job_url": {"anyOf": [{"type": "string"}, {"type": "null"}]},
-    },
-    "required": ["company", "role_title", "language", "job_url"],
-    "additionalProperties": False,
-}
+
+def build_meta_schema(langs: list[str]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "company": {"type": "string"},
+            "role_title": {"type": "string"},
+            "language": {"type": "string", "enum": list(langs)},
+            "job_url": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        },
+        "required": ["company", "role_title", "language", "job_url"],
+        "additionalProperties": False,
+    }
+
 
 
 PROPOSAL_SYSTEM_PROMPT = """\
@@ -108,7 +113,7 @@ every draft one by one; nothing you write is used unless they approve it.
 
 You receive the job description, the resume items currently selected for this job,
 requirements the selection does not cover, the reviewer's earlier feedback, and an
-index of every verified item (id, tags, English text).
+index of every verified item (id, tags, text in {primary_name}).
 
 Propose at most {max_items} drafts, most valuable first. Each draft is one of:
 - "rephrase": rewrite ONE verified item (based_on = [its id]) so it uses the job's
@@ -122,9 +127,8 @@ Propose at most {max_items} drafts, most valuable first. Each draft is one of:
 Rules:
 - kind is "bullet" (job_id = the job or project it belongs to) or "summary" (job_id = "").
   Summaries can only be rephrased or new, not merged.
-- Write every draft in English ("en") and Brazilian Portuguese ("pt") with the same
-  meaning. Bullets: one sentence, past tense, starting with a verb, no first person,
-  at most about 200 characters.
+- Write every draft in {langs} with the same meaning. Bullets: one sentence, past
+  tense, starting with a verb, no first person, at most about 200 characters.{style}
 - In rephrase and merge drafts never introduce a number, tool, technology, company,
   or result that is not in the based_on items. Drafts that do are treated as
   unverified new claims.
@@ -138,7 +142,7 @@ Rules:
 REVISE_SYSTEM_PROMPT = """\
 You revise ONE resume draft according to the reviewer's comment. The same rules
 apply as when it was drafted:
-- Keep "en" (English) and "pt" (Brazilian Portuguese) equivalent.
+- Keep {langs} equivalent.
 - For "rephrase" and "merge", use only facts present in the based_on items; never
   introduce numbers, tools, companies or results that are not in them. If the
   comment points to other verified items, you may add their ids to based_on and use
@@ -150,6 +154,17 @@ Return the revised draft only.
 
 Index of verified items follows.
 """
+
+
+def _style_lines(langs: list[str]) -> str:
+    from .langs import LANGUAGES
+    lines = [f'\n- "{c}" is {LANGUAGES[c].style}.' for c in langs if c in LANGUAGES and LANGUAGES[c].style]
+    return "".join(lines)
+
+
+def _lang_prompt(template: str, langs: list[str], **extra: Any) -> str:
+    return template.format(langs=describe_langs(langs), langs_or=describe_langs(langs, "or"), primary=langs[0],
+                           primary_name=prompt_name(langs[0]), style=_style_lines(langs), **extra)
 
 
 class LLMError(Exception):
@@ -276,6 +291,10 @@ def build_selection_schema(master: Master, count_limits: bool = False) -> dict[s
     }
 
 
+def _texts_props(langs: list[str]) -> dict[str, Any]:
+    return {c: {"type": "string"} for c in langs}
+
+
 def _draft_schema(master: Master) -> dict[str, Any]:
     entries = [*master.jobs, *master.projects]
     item_ids = [s.id for s in master.summaries] + [b.id for e in entries for b in e.bullets]
@@ -287,8 +306,7 @@ def _draft_schema(master: Master) -> dict[str, Any]:
         "based_on": ids,
         "replaces": ids,
         "tags": {"type": "array", "items": {"type": "string"}},
-        "en": {"type": "string"},
-        "pt": {"type": "string"},
+        **_texts_props(master.langs),
         "rationale": {"type": "string"},
     }
     return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
@@ -307,7 +325,7 @@ VERSION_SYSTEM_PROMPT = """You draft alternative wordings ("versions") of ONE it
 candidate reads every draft, may edit it, and only saves the one they want; nothing
 you write is used otherwise.
 
-You receive the item (English and Brazilian Portuguese), where it sits (a job, project
+You receive the item (in {langs}), where it sits (a job, project
 or education entry, or the summary), the other items of that entry for context and
 voice, the versions that already exist, drafts you already offered, and the
 candidate's note on what they want.
@@ -328,16 +346,14 @@ Style:
   decision, an outcome. Never a changelog of recent activity.
 - At most the length of the original unless the note asks for more. Shorter is
   usually better.
-- "en" and "pt" say the same thing; "pt" is natural Brazilian Portuguese (first
-  person verb forms, as in the original, e.g. "Construí").
+- Write each draft in {langs}, saying the same thing in each.{style}
 - "note": a few words on what this draft changes (e.g. "outcome first, shorter").
 """
 
 
-def build_versions_schema(n: int) -> dict[str, Any]:
-    draft = {"type": "object",
-             "properties": {"en": {"type": "string"}, "pt": {"type": "string"}, "note": {"type": "string"}},
-             "required": ["en", "pt", "note"], "additionalProperties": False}
+def build_versions_schema(n: int, langs: list[str] = ("en", "pt")) -> dict[str, Any]:
+    props = {**_texts_props(list(langs)), "note": {"type": "string"}}
+    draft = {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
     return {"type": "object",
             "properties": {"drafts": {"type": "array", "items": draft, "minItems": 1, "maxItems": n}},
             "required": ["drafts"], "additionalProperties": False}
@@ -439,11 +455,12 @@ class LLM:
 
     # ------------------------------------------------------------ meta
 
-    def extract_meta(self, job_text: str) -> tuple[Meta, Usage]:
+    def extract_meta(self, job_text: str, langs: list[str] = ("en", "pt")) -> tuple[Meta, Usage]:
+        langs = list(langs)
         resp = self._call(
-            system=[{"type": "text", "text": META_SYSTEM_PROMPT}],
+            system=[{"type": "text", "text": _lang_prompt(META_SYSTEM_PROMPT, langs)}],
             user="JOB DESCRIPTION:\n" + job_text,
-            schema=META_SCHEMA,
+            schema=build_meta_schema(langs),
             # Haiku 5.5 thinks by default (adaptive), and thinking counts against max_tokens.
             max_tokens=4096,
         )
@@ -538,7 +555,7 @@ class LLM:
                 max_items: int = 5) -> tuple[list[dict], Usage]:
         """Draft wording proposals. Returned raw; generation.check_proposal validates them."""
         resp = self._call(
-            system=[{"type": "text", "text": PROPOSAL_SYSTEM_PROMPT.format(max_items=max_items)},
+            system=[{"type": "text", "text": _lang_prompt(PROPOSAL_SYSTEM_PROMPT, master.langs, max_items=max_items)},
                     self._index_block(master)],
             user="JOB DESCRIPTION:\n" + job_text + "\n\n" + context,
             schema=build_proposal_schema(master),
@@ -553,7 +570,8 @@ class LLM:
 
     def revise(self, master: Master, draft: dict, comment: str, sources: str) -> tuple[dict, Usage]:
         resp = self._call(
-            system=[{"type": "text", "text": REVISE_SYSTEM_PROMPT}, self._index_block(master)],
+            system=[{"type": "text", "text": _lang_prompt(REVISE_SYSTEM_PROMPT, master.langs)},
+                    self._index_block(master)],
             user=("DRAFT (JSON):\n" + json.dumps(draft, ensure_ascii=False)
                   + "\n\nSOURCE ITEMS:\n" + sources
                   + "\n\nREVIEWER COMMENT:\n" + comment),
@@ -568,12 +586,13 @@ class LLM:
 
 
     def versions(self, context: str, n: int = 3, reasoning: Optional[str] = None,
-                 max_tokens: int = 10000,
-                 on_text: Optional[Callable[[str], None]] = None) -> tuple[list[dict], Usage]:
+                 max_tokens: int = 10000, on_text: Optional[Callable[[str], None]] = None,
+                 langs: list[str] = ("en", "pt")) -> tuple[list[dict], Usage]:
         """Draft alternative wordings of one item. Returned raw;
         generation.draft_versions checks them."""
-        resp = self._call(system=[{"type": "text", "text": VERSION_SYSTEM_PROMPT.format(n=n)}],
-                          user=context, schema=build_versions_schema(n), max_tokens=max_tokens,
+        langs = list(langs)
+        resp = self._call(system=[{"type": "text", "text": _lang_prompt(VERSION_SYSTEM_PROMPT, langs, n=n)}],
+                          user=context, schema=build_versions_schema(n, langs), max_tokens=max_tokens,
                           reasoning=reasoning, on_text=on_text)
         usage = Usage.from_response(resp)
         try:

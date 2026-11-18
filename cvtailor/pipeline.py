@@ -19,8 +19,9 @@ from typing import Any, Callable, Optional
 from . import db
 from .config import Config, app_folder_name, company_key, pdf_filename
 from .llm import LLM, LLMError, Usage
-from .master import gate_headlines, gate_projects, item_index, item_text, load_master
-from .render import Renderer, make_render_input, make_renderer
+from .langs import name as lang_name
+from .master import gate_headlines, gate_language, gate_projects, item_index, item_text, load_master
+from .render import MissingTextError, Renderer, make_render_input, make_renderer
 from .route import RouteResult, route
 from .schema import TIERS, LLMSelection, Master, Meta, Selection
 from .tags import match_tags
@@ -173,13 +174,21 @@ def open_file(path: Path) -> None:
 
 
 def select_with_llm(ctx: "Context", text: str, master: Master, matches: dict[str, str],
-                    careful: bool, io: IO, verbose: bool = False) -> tuple[LLMSelection, Usage]:
+                    careful: bool, io: IO, verbose: bool = False,
+                    lang: Optional[str] = None) -> tuple[LLMSelection, Usage]:
     """The LLM selection step: one call, or careful mode (careful.py) when asked for
     by the option or by CV_LLM_MODE=careful."""
     llm = ctx.get_llm()
     # Projects with only_for_tags the job doesn't mention are hidden from the model,
-    # and its answer is validated against this view, so it can't pick them.
+    # and its answer is validated against this view, so it can't pick them. The same
+    # goes for items without text in the CV's language.
     master = gate_headlines(gate_projects(master, matches), text)
+    if lang and lang != master.primary:
+        gated = gate_language(master, lang)
+        if gated is not master:
+            hidden = len(item_index(master)) - len(item_index(gated))
+            io.out(f"{hidden} item{'s' if hidden != 1 else ''} without {lang_name(lang)} text left out")
+        master = gated
     if not (careful or ctx.cfg.careful):
         return llm.select(text, master)
     from .careful import careful_select, load_examples
@@ -196,8 +205,9 @@ def select_with_llm(ctx: "Context", text: str, master: Master, matches: dict[str
     return res.selection, res.usage
 
 
-def describe_selection(sel: Selection, master: Master, lang: str = "en") -> list[str]:
+def describe_selection(sel: Selection, master: Master, lang: Optional[str] = None) -> list[str]:
     idx = item_index(master)
+    lang = lang or master.primary
     out = [f"summary: {sel.summary_id}  {item_text(idx[sel.summary_id], lang)}"]
     out.append("bullets:")
     for job_id, ids in sel.bullets.items():
@@ -224,7 +234,9 @@ def _fit(ctx: Context, sel: Selection, lang: str, *, trim: bool, io: IO) -> FitR
 
     try:
         res = fit_to_page(sel, ctx.master, lang, ctx.get_renderer().render, trim=trim, on_remove=on_remove)
-    except PageFitError as e:
+    except (PageFitError, MissingTextError) as e:
+        raise PipelineError(str(e)) from None
+    except ValueError as e:  # a language without template words
         raise PipelineError(str(e)) from None
     finally:
         for l in lines:
@@ -240,8 +252,9 @@ def _resolve_meta(ctx: Context, text: str, opts: NewOptions, first_line_url: Opt
         return Meta(company=opts.company, role_title=opts.role, language=opts.lang,
                     job_url=opts.url or first_line_url)
     meta: Optional[Meta] = None
+    langs = ctx.master.langs
     try:
-        meta, u = ctx.get_llm().extract_meta(text)
+        meta, u = ctx.get_llm().extract_meta(text, langs)
         usage.append(u)
     except Exception as e:  # noqa: BLE001 - any API/parse failure falls back to asking
         if not io.interactive or io.prompt is None:
@@ -249,7 +262,7 @@ def _resolve_meta(ctx: Context, text: str, opts: NewOptions, first_line_url: Opt
         io.out(f"meta extraction failed ({str(e).splitlines()[0]}); please enter the details.")
         company = opts.company or io.prompt("Company", None)
         role = opts.role or io.prompt("Role title", None)
-        lang = opts.lang or io.prompt("Language (en/pt)", "en")
+        lang = opts.lang or io.prompt(f"Language ({'/'.join(langs)})", langs[0])
         meta = Meta(company=company, role_title=role, language=lang, job_url=None)
     data = meta.model_dump()
     if opts.company:
@@ -309,6 +322,11 @@ def run_new(ctx: Context, raw_text: str, opts: NewOptions, io: IO = IO()) -> New
     usages: list[Usage] = []
     meta = _resolve_meta(ctx, text, opts, first_url, io, usages)
     lang = meta.language
+    if lang not in master.langs:
+        if opts.lang:  # asked for by name: any language the master has texts in may work
+            io.out(f"note: {lang_name(lang)} is not one of the master's languages ({', '.join(master.langs)})")
+        else:  # a posting in another language gets a CV in the primary one
+            lang = master.primary
     io.out(f"{meta.company} | {meta.role_title} | {lang}")
     lap("meta")
 
@@ -351,7 +369,7 @@ def run_new(ctx: Context, raw_text: str, opts: NewOptions, io: IO = IO()) -> New
             raise PipelineError("variant selection is invalid:\n  - " + "\n  - ".join(errors))
     else:
         try:
-            llm_sel, u = select_with_llm(ctx, text, master, matches, opts.careful, io, opts.verbose)
+            llm_sel, u = select_with_llm(ctx, text, master, matches, opts.careful, io, opts.verbose, lang)
         except LLMError as e:
             raise PipelineError(str(e)) from None
         usages.append(u)
@@ -367,7 +385,7 @@ def run_new(ctx: Context, raw_text: str, opts: NewOptions, io: IO = IO()) -> New
 
     if opts.dry_run:
         io.out("--- selection (dry run, nothing written) ---")
-        for line in describe_selection(selection, master, "en"):
+        for line in describe_selection(selection, master):
             io.out(line)
         if opts.verbose:
             io.out(usage.line())
@@ -483,7 +501,8 @@ def regen(ctx: Context, app_id: int, io: IO = IO()) -> Path:
     app = get_app(ctx, app_id)
     try:
         text = app["job_description"]
-        llm_sel, usage = select_with_llm(ctx, text, ctx.master, match_tags(text, ctx.master), False, io)
+        llm_sel, usage = select_with_llm(ctx, text, ctx.master, match_tags(text, ctx.master), False, io,
+                                         lang=app["lang"])
     except LLMError as e:
         raise PipelineError(str(e)) from None
     if llm_sel.unmatched_requirements:
@@ -530,7 +549,7 @@ def check_edit(ctx: Context, app: dict, sel: Selection) -> tuple[list[str], Opti
         return errors, None
     try:
         fit = fit_to_page(sel, ctx.master, app["lang"], ctx.get_renderer().render, trim=False)
-    except PageFitError as e:
+    except (PageFitError, MissingTextError) as e:
         return [str(e)], None
     return [], fit
 
@@ -554,8 +573,12 @@ def approve(ctx: Context, app_id: int, name: str, replace: bool, io: IO = IO()) 
     sel = stored_selection(ctx, app)
     max_pages = ctx.master.limits.max_pages
     problems = []
-    for lang in ("en", "pt"):
-        r = ctx.get_renderer().render(make_render_input(ctx.master, sel, lang))
+    for lang in ctx.master.langs:
+        try:
+            r = ctx.get_renderer().render(make_render_input(ctx.master, sel, lang))
+        except MissingTextError as e:
+            problems.append(str(e))
+            continue
         if r.pages > max_pages:
             over = r.pages - max_pages
             problems.append(f"{lang.upper()} is {r.pages} pages ({over} over the limit of {max_pages})")

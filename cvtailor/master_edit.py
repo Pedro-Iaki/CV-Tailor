@@ -22,11 +22,24 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
+from .config import folder_slug
+from .langs import LANGUAGES
+from .langs import name as lang_name
 from .master import MasterError, parse_master
-from .schema import TIERS, Master
+from .schema import TIERS, Languages, Master
 
 HISTORY_KEEP = 30
 _TEXT_KINDS = ("summary", "bullet", "description", "headline")
+_ENTRY_KINDS = ("job", "project", "education")
+# Entry fields the builder can change: name -> (kinds, how it is written)
+_ENTRY_FIELDS = {
+    "title": (("job",), "texts"), "degree": (("education",), "texts"),
+    "name": (("project",), "text"), "institution": (("education",), "text"),
+    "note": (("education",), "text?"), "description": (("job", "project"), "text?"),
+    "company": (("job",), "plain?"), "location": (("job",), "plain?"),
+    "start": (_ENTRY_KINDS, "date?"), "end": (_ENTRY_KINDS, "date?"),
+    "expected": (("education",), "bool"),
+}
 
 
 class EditError(Exception):
@@ -97,19 +110,137 @@ def _flow(items: list[str]) -> CommentedSeq:
     return seq
 
 
-def _bilingual(v: Any) -> Any:
-    """{en, pt} for a bilingual value, written as a flow map like the rest of the file."""
-    if isinstance(v, dict):
-        m = CommentedMap([("en", _q(v.get("en", ""))), ("pt", _q(v.get("pt", "")))])
-        m.fa.set_flow_style()
-        return m
-    return _q(v)
+def doc_languages(doc: Any) -> Languages:
+    """The languages a master document declares (English + Portuguese without the key)."""
+    raw = doc.get("languages") if isinstance(doc, dict) else None
+    try:
+        return Languages.model_validate(dict(raw)) if isinstance(raw, dict) else Master.model_fields[
+            "languages"].default_factory()
+    except Exception as e:  # noqa: BLE001 - reported like any other problem with the file
+        raise EditError([f"languages: {e}"]) from None
+
+
+def _texts(v: Any, langs: list[str], old: Any = None) -> Any:
+    """A per-language value as a flow map ({ en: "...", es: "..." }), the file's style.
+    Languages the change doesn't mention keep their old text; empty ones are left out.
+    A plain string stays a string (the same text in every language)."""
+    if not isinstance(v, dict):
+        return _q(str(v).strip())
+    merged = dict(old) if isinstance(old, dict) else {}
+    merged.update({k: str(x).strip() for k, x in v.items() if k in LANGUAGES})
+    order = [*langs, *(k for k in merged if k not in langs)]
+    m = CommentedMap([(k, _q(merged[k])) for k in order if str(merged.get(k) or "").strip()])
+    m.fa.set_flow_style()
+    return m
+
+
+def _lang_values(data: dict[str, Any]) -> dict[str, str]:
+    return {k: str(v).strip() for k, v in data.items() if k in LANGUAGES and str(v or "").strip()}
+
+
+def _skill_items(value: Any, langs: list[str]) -> CommentedSeq:
+    """A skill line's items: strings, or a text per language. The same text in every
+    language is written once, as a string."""
+    items = CommentedSeq()
+    for it in value or []:
+        if isinstance(it, dict):
+            texts = _lang_values(it)
+            if texts.get(langs[0]):
+                items.append(_q(texts[langs[0]]) if set(texts.values()) == {texts[langs[0]]}
+                             else _texts(texts, langs))
+        elif isinstance(it, str) and it.strip():
+            items.append(_q(it.strip()))
+    return items
+
+
+def _need_primary(texts: dict[str, str], langs: list[str], what: str = "text") -> None:
+    if not texts.get(langs[0]):
+        raise EditError([f"the {lang_name(langs[0])} {what} can't be empty"])
 
 
 def _clean_tags(tags: Any) -> list[str]:
     if isinstance(tags, str):
         tags = re.split(r"[,\s]+", tags)
     return [t.strip().lower() for t in (tags or []) if str(t).strip()]
+
+
+def create_master(path: Path, data: dict[str, Any]) -> Master:
+    """Write a first master.yaml from the setup wizard's answers: the languages, the
+    profile, one summary, jobs (each with its first bullets) and education. The file
+    is checked like any other master and never replaces an existing one."""
+    path = Path(path)
+    if path.exists():
+        raise EditError([f"{path.name} already exists; edit it in the Master tab"])
+    langs = Languages.model_validate(data.get("languages") or {}).codes
+    ed = MasterEditor(path, path.parent / "master-history")
+    doc = CommentedMap()
+    lang_node = CommentedMap([("primary", langs[0]), ("secondary", langs[1] if len(langs) > 1 else None)])
+    lang_node.fa.set_flow_style()
+    doc["languages"] = lang_node
+    doc.yaml_set_start_comment("Your master resume: every CV is picked from what is written here.\n"
+                               "Edit it in the app's Master tab, or here (the app checks it on every run).")
+    p = data.get("profile") or {}
+    profile = CommentedMap([("name", str(p.get("name") or "").strip())])
+    headline = _lang_values(p.get("headline") or {})
+    if headline:
+        profile["headline"] = _texts(headline, langs)
+    for key in ("email", "phone", "location"):
+        if str(p.get(key) or "").strip():
+            profile[key] = _q(str(p[key]).strip())
+    links = CommentedSeq()
+    for link in p.get("links") or []:
+        if str(link.get("url") or "").strip():
+            node = CommentedMap([("label", _q(str(link.get("label") or link["url"]).strip())),
+                                 ("url", str(link["url"]).strip())])
+            node.fa.set_flow_style()
+            links.append(node)
+    if links:
+        profile["links"] = links
+    doc["profile"] = profile
+    doc["summaries"] = CommentedSeq()
+    doc["jobs"] = CommentedSeq()
+    s = data.get("summary") or {}
+    texts = _lang_values(s)
+    errors = [] if profile["name"] else ["your name is missing"]
+    if texts.get(langs[0]):
+        node = CommentedMap([("id", "sum-main"), ("tags", _flow(_clean_tags(s.get("tags"))))])
+        for code in langs:
+            if code in texts:
+                node[code] = _q(texts[code])
+        doc["summaries"].append(node)
+    else:
+        errors.append(f"the summary needs its {lang_name(langs[0])} text")
+    if errors:
+        raise EditError(errors)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        for kind, key in (("education", "education"), ("job", "jobs")):
+            for entry in reversed(data.get(key) or []):  # _add_entry puts each first
+                entry = dict(entry)
+                bullets = [b for b in entry.pop("bullets", None) or [] if _lang_values(b).get(langs[0])]
+                if bullets:
+                    entry["bullet"] = bullets[0]
+                ed._add_entry(doc, kind, entry, langs, write=False)
+                node = doc[key][0]
+                for b in bullets[1:]:
+                    bt = _lang_values(b)
+                    prefix = node["id"].split("-", 1)[-1]
+                    bn = CommentedMap([("id", ed.new_id(doc, [], prefix, bt[langs[0]])),
+                                       ("tags", _flow(_clean_tags(b.get("tags"))))])
+                    for code in langs:
+                        if code in bt:
+                            bn[code] = _q(bt[code])
+                    node["bullets"].append(bn)
+        if not doc.get("education"):
+            doc.pop("education", None)
+        text = ed.dump(doc)
+        master = parse_master(yaml.safe_load(text))
+    except MasterError as e:
+        raise EditError(e.errors) from None
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8", newline="")
+    tmp.replace(path)
+    return master
 
 
 class MasterEditor:
@@ -237,16 +368,23 @@ class MasterEditor:
     # ------------------------------------------------------------ operations
 
     def update(self, id_: str, changes: dict[str, Any]) -> Master:
-        """Change the text (en, pt), tags or alt_of of an item; a skill category's name,
-        items, required or min_items; an entry's default description or a project's name."""
+        """Change an item's text in one or more languages (keys: language codes), tags
+        or alt_of; a skill category's name, items, required or min_items; a job's,
+        project's or education entry's own fields (title, dates, description...)."""
         doc = self.load()
+        langs = doc_languages(doc).codes
         seq, i, kind, _ = self._locate(doc, id_)
         node = seq[i]
         for key, value in changes.items():
-            if key in ("en", "pt") and kind in _TEXT_KINDS:
-                if not str(value).strip():
-                    raise EditError([f"{key.upper()} text can't be empty"])
-                node[key] = _q(str(value).strip())
+            if key in LANGUAGES and kind in _TEXT_KINDS:
+                if str(value or "").strip():
+                    node[key] = _q(str(value).strip())
+                elif key == langs[0]:
+                    raise EditError([f"the {lang_name(key)} text can't be empty"])
+                else:
+                    node.pop(key, None)
+            elif key in _ENTRY_FIELDS and kind in _ENTRY_FIELDS[key][0]:
+                self._set_entry_field(node, key, value, langs)
             elif key == "tags" and kind in (*_TEXT_KINDS, "project"):
                 tags = _clean_tags(value)
                 if not tags and kind != "headline":
@@ -265,16 +403,9 @@ class MasterEditor:
                 else:
                     node.pop("alt_of", None)
             elif key == "category" and kind == "skill_category":
-                node["category"] = _bilingual(value)
+                node["category"] = _texts(value, langs, node.get("category"))
             elif key == "items" and kind == "skill_category":
-                items = CommentedSeq()
-                for it in value or []:
-                    if isinstance(it, dict) and it.get("en", "").strip():
-                        same = it.get("pt", "").strip() in ("", it["en"].strip())
-                        items.append(_q(it["en"].strip()) if same else _bilingual(
-                            {"en": it["en"].strip(), "pt": it["pt"].strip()}))
-                    elif isinstance(it, str) and it.strip():
-                        items.append(_q(it.strip()))
+                items = _skill_items(value, langs)
                 if not items:
                     raise EditError(["a skill line needs at least one item"])
                 node["items"] = items
@@ -288,24 +419,53 @@ class MasterEditor:
                     node.pop("min_items", None)
                 else:
                     node["min_items"] = int(value)
-            elif key == "description" and kind in ("job", "project"):
-                if value is None:
-                    node.pop("description", None)
-                else:
-                    node["description"] = _bilingual(value)
-            elif key == "name" and kind == "project":
-                node["name"] = _bilingual(value)
             else:
                 raise EditError([f"can't change '{key}' of a {kind.replace('_', ' ')}"])
         return self.commit(doc)
 
+    def _set_entry_field(self, node: CommentedMap, key: str, value: Any, langs: list[str]) -> None:
+        """One field of a job, project or education entry (from the entry form)."""
+        how = _ENTRY_FIELDS[key][1]
+        empty = value is None or (isinstance(value, str) and not value.strip()) or (
+            isinstance(value, dict) and not _lang_values(value))
+        if how.endswith("?") and empty:
+            node.pop(key, None)
+            return
+        how = how.rstrip("?")
+        if how == "bool":
+            if value:
+                node[key] = True
+            else:
+                node.pop(key, None)
+        elif how == "date":
+            node[key] = str(value).strip()
+        elif how == "plain":
+            node[key] = _q(str(value).strip())
+        else:  # "texts" (always per language) or "text" (a string, or per language)
+            if isinstance(value, dict):
+                texts = _lang_values(value)
+                _need_primary(texts, langs, key)
+                node[key] = _texts(texts, langs, node.get(key))
+            elif how == "texts":
+                raise EditError([f"{key} needs a text per language"])
+            elif str(value).strip():
+                node[key] = _q(str(value).strip())
+            else:
+                raise EditError([f"{key} can't be empty"])
+
     def add(self, kind: str, parent: Optional[str], data: dict[str, Any],
             after: Optional[str] = None) -> tuple[Master, str]:
         """Add a bullet (parent: job, project or education id), a summary, a description
-        alternative (parent: job or project id), a headline option, or a skill category
-        (parent: its tier). Returns the new master and the new id."""
+        alternative (parent: job or project id), a headline option, a skill category
+        (parent: its tier), or a job, project or education entry (data: its fields; a
+        job also needs its first bullet, as data["bullet"]). Returns the new master and
+        the new id."""
         doc = self.load()
-        en, pt = str(data.get("en", "")).strip(), str(data.get("pt", "")).strip()
+        langs = doc_languages(doc).codes
+        if kind in _ENTRY_KINDS:
+            return self._add_entry(doc, kind, data, langs)
+        texts = _lang_values(data)
+        first = texts.get(langs[0], "")
         if kind == "bullet":
             entry, _ = self._entry(doc, parent or "")
             seq = entry.setdefault("bullets", CommentedSeq())
@@ -327,20 +487,24 @@ class MasterEditor:
         else:
             raise EditError([f"can't add a {kind}"])
 
-        new_id = str(data.get("id") or "").strip() or self.new_id(doc, list(seq), fallback, en or str(
-            (data.get("category") or {}).get("en", "")))
+        category = _lang_values(data.get("category") or {}) if isinstance(data.get("category"), dict) else {}
+        new_id = str(data.get("id") or "").strip() or self.new_id(doc, list(seq), fallback, first or str(
+            category.get(langs[0], "")))
         if new_id in self.all_ids(doc):
             raise EditError([f"id '{new_id}' is already used"])
         node = CommentedMap([("id", new_id)])
         if kind == "skill_category":
-            node["category"] = _bilingual(data.get("category") or {"en": en, "pt": pt})
-            node["items"] = CommentedSeq([_q(x) for x in data.get("items") or []])
+            node["category"] = _texts(category or texts, langs)
+            node["items"] = _skill_items(data.get("items"), langs)
         else:
+            _need_primary(texts, langs)
             if data.get("alt_of"):
                 node["alt_of"] = _clean_tags(data["alt_of"])[0] if len(_clean_tags(data["alt_of"])) == 1 \
                     else _flow(_clean_tags(data["alt_of"]))
             node["tags"] = _flow(_clean_tags(data.get("tags")))
-            node["en"], node["pt"] = _q(en), _q(pt)
+            for code in [*langs, *(c for c in texts if c not in langs)]:
+                if code in texts:
+                    node[code] = _q(texts[code])
         if kind == "headline":
             node.fa.set_flow_style()
         pos = len(seq)
@@ -350,6 +514,74 @@ class MasterEditor:
                 pos = ids.index(after) + 1
         seq.insert(pos, node)
         return self.commit(doc), new_id
+
+    def _add_entry(self, doc: CommentedMap, kind: str, data: dict[str, Any],
+                   langs: list[str], write: bool = True) -> tuple[Optional[Master], str]:
+        key = {"job": "jobs", "project": "projects", "education": "education"}[kind]
+        seq = doc.setdefault(key, CommentedSeq())
+        label = data.get({"job": "company", "project": "name", "education": "institution"}[kind]) or ""
+        if isinstance(label, dict):
+            label = _lang_values(label).get(langs[0], "")
+        if kind == "job" and not label:
+            label = _lang_values(data.get("title") or {}).get(langs[0], "")
+        stem = {"job": "job", "project": "proj", "education": "edu"}[kind]
+        base = f"{stem}-{folder_slug(str(label), 24)}"
+        new_id, n, taken = base, 2, self.all_ids(doc)
+        while new_id in taken:
+            new_id, n = f"{base}-{n}", n + 1
+        node = CommentedMap([("id", new_id)])
+        order = {"job": ("title", "company", "location", "start", "end", "description"),
+                 "project": ("name", "start", "end", "description"),
+                 "education": ("degree", "institution", "note", "start", "end", "expected")}[kind]
+        for f in order:
+            if f in data:
+                self._set_entry_field(node, f, data[f], langs)
+        need = {"job": ("title", "start"), "project": ("name",), "education": ("degree", "institution", "start")}[kind]
+        missing = [f for f in need if f not in node]
+        if missing:
+            raise EditError([f"the new {kind} needs: {', '.join(missing)}"])
+        if kind == "project":
+            node.insert(2, "tags", _flow(_clean_tags(data.get("tags"))))
+        bullet = data.get("bullet")
+        if bullet:
+            texts = _lang_values(bullet)
+            _need_primary(texts, langs, "bullet")
+            prefix = new_id.split("-", 1)[-1] or stem
+            b = CommentedMap([("id", self.new_id(doc, [], prefix, texts[langs[0]])),
+                              ("tags", _flow(_clean_tags(bullet.get("tags"))))])
+            for code in langs:
+                if code in texts:
+                    b[code] = _q(texts[code])
+            node["bullets"] = CommentedSeq([b])
+        seq.insert(0, node)  # newest first, as master files usually are (the CV sorts by date)
+        return (self.commit(doc) if write else None), new_id
+
+    def set_languages(self, primary: str, secondary: Optional[str]) -> Master:
+        """Change the CV's languages. Texts are never translated or removed: items
+        without the new secondary language are left out of CVs in it until their text
+        is added, and texts in a language no longer used stay in the file."""
+        from pydantic import ValidationError
+
+        from .master import load_master, missing_texts
+        try:
+            langs = Languages(primary=primary, secondary=secondary)
+        except ValidationError as e:
+            raise EditError([x["msg"].removeprefix("Value error, ") for x in e.errors()]) from None
+        lost = missing_texts(load_master(self.path), langs.primary)
+        if lost:
+            raise EditError([f"{len(lost)} text{'s have' if len(lost) > 1 else ' has'} no {lang_name(langs.primary)} "
+                             f"yet, and the main language must be on every item. Add them first (in the Master "
+                             f"tab, switch to {langs.primary.upper()}: items without it are marked), or keep "
+                             f"{lang_name(langs.primary)} as the second language.",
+                             *(f"  {what}" for _, what in lost[:8]), *(["  ..."] if len(lost) > 8 else [])])
+        doc = self.load()
+        node = CommentedMap([("primary", langs.primary), ("secondary", langs.secondary)])
+        node.fa.set_flow_style()
+        if "languages" in doc:
+            doc["languages"] = node
+        else:
+            doc.insert(0, "languages", node, comment="the CV's languages; every text is keyed by these codes")
+        return self.commit(doc)
 
     def delete(self, id_: str) -> Master:
         doc = self.load()

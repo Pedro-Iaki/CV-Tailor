@@ -103,7 +103,7 @@ def embedding_hints(job_text: str, master: Master, model: str, base_url: str,
         return []
     url = re.sub(r"/v1/?$", "", base_url.rstrip("/")) + "/api/embed"
     try:
-        vecs = _post_json(url, {"model": model, "input": lines + [item_text(idx[i]) for i in ids]},
+        vecs = _post_json(url, {"model": model, "input": lines + [item_text(idx[i], master.primary) for i in ids]},
                           timeout)["embeddings"]
     except Exception:  # noqa: BLE001 - optional evidence; selection works without it
         return []
@@ -181,7 +181,7 @@ def describe(sel: LLMSelection, master: Master) -> str:
     idx = item_index(master)
 
     def t(i: str, n: int = 90) -> str:
-        return " ".join(item_text(idx[i]).split())[:n] if i in idx else "(unknown)"
+        return " ".join(item_text(idx[i], master.primary).split())[:n] if i in idx else "(unknown)"
 
     lines = [f"summary: {sel.summary_id}: {t(sel.summary_id)}", "projects: " + ", ".join(sel.project_ids)]
     for owner, ids in sel.bullets.items():

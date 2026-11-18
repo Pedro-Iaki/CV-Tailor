@@ -11,6 +11,7 @@ cv_ratings table of applications.db.
 
 from __future__ import annotations
 
+import html
 import json
 import sqlite3
 from contextlib import closing
@@ -21,8 +22,9 @@ from typing import Any, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import db
+from .langs import LANGUAGES
 from .master import load_master
-from .render import make_render_input, render_html
+from .render import MissingTextError, make_render_input, render_html
 from .schema import Master, Selection
 from .validate import validate_selection
 
@@ -112,7 +114,8 @@ class RatingApp:
         out = []
         for n, key in enumerate(self.order, 1):
             c, r = self.by_key[key], rated.get(key)
-            out.append({"n": n, "key": key, "title": c.title, "lang": c.lang,
+            langs = list(dict.fromkeys([c.lang, *c.master.langs]))
+            out.append({"n": n, "key": key, "title": c.title, "lang": c.lang, "langs": langs,
                         "rating": r["rating"] if r else None, "note": (r or {}).get("note") or "",
                         "label": c.label if r else ""})  # blind until rated
         return out
@@ -123,7 +126,10 @@ class RatingApp:
         if errors:
             return "<p>This selection is not valid for its master:</p><ul>" + "".join(
                 f"<li>{e}</li>" for e in errors) + "</ul>"
-        return render_html(make_render_input(c.master, c.selection, lang if lang in ("en", "pt") else c.lang))
+        try:
+            return render_html(make_render_input(c.master, c.selection, lang if lang in LANGUAGES else c.lang))
+        except MissingTextError as e:
+            return f"<p>{html.escape(str(e))}</p>"
 
     def job_text(self, key: str) -> str:
         return self.by_key[key].job_text
@@ -229,7 +235,7 @@ table{border-collapse:collapse;margin:14px;width:calc(100% - 28px)}td,th{border-
 <div class="tabs"><button id="nextUnrated">Next unrated</button><button id="showSummary">Summary</button></div>
 <div id="list"></div></aside>
 <main><div class="bar"><span class="title" id="title">Loading...</span>
-<button id="lang">EN / PT</button><span id="stars"></span>
+<button id="lang" title="Switch language (L)">Language</button><span id="stars"></span>
 <input type="text" id="note" placeholder="Note (optional)"><button id="save">Save and next</button>
 <div class="label" id="label"></div>
 <div class="hint">Keys: 1-5 rate and go to the next, L switches language, N next unrated. 5 = would send as is, 1 = unusable.</div></div>
@@ -258,7 +264,7 @@ async function summary(){const rows=await (await fetch('/api/summary')).json();$
 $('save').onclick=()=>picked&&rate(picked);$('nextUnrated').onclick=next;$('showSummary').onclick=summary;
 $('note').oninput=()=>{if(cur){drafts[cur]=$('note').value;keepDrafts()}};
 // Switching language only reloads the CV; the note is left alone.
-$('lang').onclick=()=>{lang=lang==='en'?'pt':'en';if(cur)$('cv').src=`/cv/${encodeURIComponent(cur)}?lang=${lang}`};
+$('lang').onclick=()=>{const ls=(items.find(x=>x.key===cur)||{}).langs||[lang];lang=ls[(ls.indexOf(lang)+1)%ls.length];$('lang').textContent=lang.toUpperCase();if(cur)$('cv').src=`/cv/${encodeURIComponent(cur)}?lang=${lang}`};
 document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'){if(e.key==='Enter'&&picked)rate(picked);return}
  if(e.key>='1'&&e.key<='5')rate(+e.key);else if(e.key==='l'||e.key==='L')$('lang').click();else if(e.key==='n'||e.key==='N')next()});
 load();

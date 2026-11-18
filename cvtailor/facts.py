@@ -19,7 +19,7 @@ from . import db
 from .master import MasterError, check_master, item_index
 from .schema import Master
 
-ITEM_COLUMNS = ("id", "kind", "job_id", "origin", "based_on", "tags", "en", "pt", "comment",
+ITEM_COLUMNS = ("id", "kind", "job_id", "origin", "based_on", "tags", "texts", "comment",
                 "proposal_id", "source_application_id", "created_at")
 
 
@@ -64,7 +64,7 @@ def merge_facts(master: Master, facts: list[dict[str, Any]]) -> tuple[Master, li
     jobs = {e["id"]: e for e in [*data["jobs"], *data["projects"]]}  # bullet owners
     warnings: list[str] = []
     for f in facts:
-        item = {"id": f["id"], "tags": f["tags"], "en": f["en"], "pt": f["pt"],
+        item = {"id": f["id"], "tags": f["tags"], **f["texts"],
                 "origin": f["origin"], "based_on": f["based_on"]}
         if f["kind"] == "summary":
             data["summaries"].append(item)
@@ -105,8 +105,8 @@ def add_unsafe(conn: sqlite3.Connection, item: dict[str, Any], rationale: Option
                                    "rationale": rationale})
 
 
-def promote(conn: sqlite3.Connection, item_id: str, *, en: Optional[str] = None,
-            pt: Optional[str] = None, tags: Optional[list[str]] = None) -> dict[str, Any]:
+def promote(conn: sqlite3.Connection, item_id: str, *, texts: Optional[dict[str, str]] = None,
+            tags: Optional[list[str]] = None, langs: Optional[list[str]] = None) -> dict[str, Any]:
     """Move an unsafe item to the facts table (inside the caller's transaction).
 
     Only the CLI calls this, after the user confirms in the terminal. It is deliberately
@@ -114,14 +114,13 @@ def promote(conn: sqlite3.Connection, item_id: str, *, en: Optional[str] = None,
     item = get_unsafe(conn, item_id)
     if item is None:
         raise FactError(f"unsafe item '{item_id}' not found")
-    if en is not None:
-        item["en"] = en
-    if pt is not None:
-        item["pt"] = pt
+    if texts is not None:
+        item["texts"] = {k: str(v) for k, v in texts.items()}
     if tags is not None:
         item["tags"] = tags
-    if not item["en"].strip() or not item["pt"].strip():
-        raise FactError("en and pt must both be non-empty")
+    empty = [c for c in (langs or list(item["texts"])) if not str(item["texts"].get(c) or "").strip()]
+    if empty or not item["texts"]:
+        raise FactError(f"the text in {', '.join(empty) or 'every language'} must not be empty")
     add_fact(conn, item, approved_via="promote")
     conn.execute("DELETE FROM unsafe_items WHERE id = ?", (item_id,))
     return item

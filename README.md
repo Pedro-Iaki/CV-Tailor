@@ -1,6 +1,6 @@
 # CV Tailor
 
-Turns a job description into a tailored, one-page CV PDF in English or Brazilian Portuguese, built from a single master YAML file. It runs as a Python CLI and as an **MCP server**, so you can drive it from Claude Code ("tailor my CV for this posting", "render #42 in Portuguese") or from a terminal.
+Turns a job description into a tailored, one-page CV PDF, built from a single master YAML file, in one or two languages of your choice (English and Brazilian Portuguese by default; also Spanish, French, German and Italian). It runs as a Python CLI and as an **MCP server**, so you can drive it from Claude Code ("tailor my CV for this posting", "render #42 in Portuguese") or from a terminal.
 
 **Core rule:** the model only selects and orders existing content by id. Every word in the PDF comes from text a human verified: `data/master.yaml`, wording you approved one draft at a time (an optional, opt-in feature), and `templates/i18n.yaml`.
 
@@ -122,7 +122,7 @@ Useful flags:
 
 | Flag | Effect |
 |---|---|
-| `--lang en\|pt` | CV language. The default is the language the posting is written in. |
+| `--lang <code>` | CV language (`en`, `pt`, `es`...). The default is the posting's language when it is one of the master's, otherwise the main language. |
 | `--company`, `--role`, `--url` | Override the detected values. With all three of company, role and lang, the meta call is skipped. |
 | `--force-generate` / `--variant NAME` | Skip routing and generate / force a specific approved variant. |
 | `--dry-run` | Run up to selection and print it with each item's text. Writes nothing. |
@@ -133,7 +133,7 @@ Useful flags:
 ### Workflow
 
 1. `new` a few postings. If a selection is poor, run `regen <id>`, or fix it by hand with `edit <id>` (the selection opens as annotated YAML in `$EDITOR`, Notepad on Windows, nano elsewhere).
-2. When a selection is good and reusable, run `approve <id> --name platform-v1`. It must fit on one page in both EN and PT.
+2. When a selection is good and reusable, run `approve <id> --name platform-v1`. It must fit on one page in each of the master's languages.
 3. Later postings with similar tags reuse that variant with no selection call (`ROUTE_THRESHOLD`, default 0.6).
 4. Record outcomes with `status <id>... screen|interview|offer|rejected|ghosted`, `discard <id>` (generated but never sent), or `mark-ghosted --older-than 30`.
 5. Use `stats` and `variants` to see callback rates by variant, language and route, with `n` and low-sample flags.
@@ -165,7 +165,7 @@ Where approved text goes depends on what kind of draft it is:
 | **rephrase** of one item, or **merge** of 2-3 bullets of the same job | a **fact** (`facts` table): reusable, selectable like any master item. It replaces its sources in the current CV, and the PDF is re-rendered | yes |
 | **new** claim (e.g. for an unmatched requirement) | an **unsafe item** (`unsafe_items` table) | **no**, not until you promote it |
 
-- **Promoting unsafe items:** use `apply.py unsafe list`, then `apply.py unsafe promote <id> [--edit]`. You confirm each item is true, and can edit the EN/PT text first. Promotion works only in the terminal: there is deliberately no MCP tool for it, so Claude can never promote a claim on its own.
+- **Promoting unsafe items:** use `apply.py unsafe list`, then `apply.py unsafe promote <id> [--edit]`. You confirm each item is true, and can edit its text first. Promotion works only in the terminal: there is deliberately no MCP tool for it, so Claude can never promote a claim on its own.
 - **Number guard:** a rephrase or merge that contains a number missing from its sources is automatically downgraded to *new*, which makes it unsafe.
 - **Reworded items:** a fact is never selected together with the item it rewords.
 - **Managing facts:** `apply.py facts list [--full]` and `apply.py facts remove <id>`. Removing a fact makes variants that use it stale.
@@ -176,7 +176,7 @@ Where approved text goes depends on what kind of draft it is:
 validate-master                 check master + every saved variant (ok / drifted / stale)
 new [FILE|-] [flags]            main pipeline
 batch FILE... [--lang] [--force-generate] [--no-trim] [--verbose]
-render <id> [--lang en|pt]      re-render the stored selection, no LLM call (e.g. the other language)
+render <id> [--lang <code>]    re-render the stored selection, no LLM call (e.g. the other language)
 edit <id>                       edit the selection, re-render, mark as edited
 regen <id>                      re-run selection and update the row in place
 open <id>                       open the PDF
@@ -212,16 +212,16 @@ See [examples/master.example.yaml](examples/master.example.yaml). Besides summar
 - `description_alts` on a job or project: other versions of its description, each with an id and tags. A description's `alt_of` can list bullets of the same entry that it already covers.
 - Skill categories with `alt_of` form alternative layouts of the same skills (for example "by area" vs. one "Hands-on" line plus a "Working knowledge" line). A skill may repeat between a category and its alternatives. Two categories that replace the same one can be used together, as halves of one layout.
 - `skills.languages`: spoken languages, always rendered last, one line per category.
-- `profile.headline_alts`: other lines under the name (each with `id`, `en`, `pt`, optional `tags`), such as "Analytics Engineer". An option is only offered to the selector when the top of the posting names that role (word for word, in English or Portuguese); otherwise the default stays. A picked option wins over a summary's headline.
+- `profile.headline_alts`: other lines under the name (each with `id`, a text per language, optional `tags`), such as "Analytics Engineer". An option is only offered to the selector when the top of the posting names that role (word for word, in any of its languages); otherwise the default stays. A picked option wins over a summary's headline.
 - `only_for_tags` on a project: the selector only sees the project when the job description mentions one of these tags (for example an AI project only for postings that mention AI). A manual selection can still include it.
 - `required: true` on a skill category: it must be listed unless one of its alternatives is (for example the Working knowledge line of a by-level layout). `min_items: N`: when listed, it shows at least N of its items. Local models get both in the grammar; validation checks them for every model.
 
-Untranslated text is not allowed: every alternative needs `en` and `pt`.
+**Languages.** `languages: { primary: en, secondary: pt }` at the top of the file names the CV's languages (a file without it is English + Portuguese). Codes: `en`, `pt` (Brazilian Portuguese), `es`, `fr`, `de`, `it`; `secondary: null` makes a one-language master. Every text is keyed by language code: `en: ...` and `es: ...` on a bullet, or `{ en: ..., es: ... }` for a short text, which can also be one string used in every language. The primary language is required on every item; the selector reads it, and a posting in a language the master doesn't have gets a CV in it. The secondary language may be missing on some items: a CV in it leaves those items out, and a job or education entry without it can't be rendered in it until you add it. Changing languages (Settings, or the file) never translates or deletes anything; texts in a language no longer used stay in the file. The fixed CV words (headings, months, "Present") for each language are in `templates/i18n.yaml`.
 
-Any short text can be one string used in both languages, or an `{en, pt}` pair. `validate-master` checks these rules and reports every error at once:
+`validate-master` checks these rules and reports every error at once:
 
 - ids are unique across the file
-- every text has non-empty `en` and `pt`
+- every text is non-empty in the primary language
 - skills sit in the tiers `hands_on`, `working`, `familiar` and `languages`, and no skill appears twice, except between a category and its alternatives
 - every `alt_of` points to an existing item of the same kind (a bullet's to a bullet of the same job or project)
 - tags match `^[a-z0-9]+(-[a-z0-9]+)*$`
@@ -275,7 +275,7 @@ CV_MODEL=qwen3:8b
 The model's job is the same as with Claude: it only picks and orders ids. The server enforces the schema while decoding, so the model can only output ids that exist in your master, and with a local model the schema also carries the per-job and per-project bullet counts and the project limit. Local models also get the choice format (`cvtailor/choices.py`): each job, project and education entry gives every bullet a rank (0 leaves it out), so a bullet can't be listed twice; bullets that are versions of each other (`alt_of`) appear as one item with `versions`, and the model picks the wording separately; skill categories that conflict are offered as whole layouts, so a mixed layout can't be expressed at all; within the chosen layout the model may drop or reorder each category's own skills (`skill_items`), never move one to another category; and the answer starts with a short `key_requirements` list that the model uses as a scratchpad. The answer is mapped back to plain ids before validation. The total-bullet limit and the other selection rules are checked in code as usual; an invalid answer is retried once with the errors, then the run stops. Small models get rejected more often, so if `new --dry-run` keeps failing validation, try a bigger model (14B or more) or raise `max_total_bullets`.
 
 Notes:
-- Meta extraction (company, role, language) is the easiest task. Selection is harder, and drafted wording (`CV_ALLOW_GENERATION`) is the hardest: expect weaker EN/PT drafts from small models. Every draft is still reviewed by you, and the number guard still applies.
+- Meta extraction (company, role, language) is the easiest task. Selection is harder, and drafted wording (`CV_ALLOW_GENERATION`) is the hardest: expect weaker drafts from small models, especially in the second language. Every draft is still reviewed by you, and the number guard still applies.
 - Prompt caching is Anthropic-only, so `cache read` stays 0, and token counts come from the server's report.
 - Qwen3 models may think before answering. A `<think>` block at the start of the answer is removed; the thinking still costs time, so a non-thinking model is faster. In a test, `qwen3:8b` with thinking off misread an English posting as Portuguese, so keep thinking on unless your GPU is too slow for it.
 
@@ -283,9 +283,9 @@ Notes:
 
 `build_portable.ps1` builds `dist\CV Tailor\`, about 56 MB (a 32 MB zip): run `CV Tailor.exe`. It opens a window (WebView2, built into Windows 10 and 11) with tabs for **New CV** (paste a posting, pick Fast, Careful or Thorough for this CV, live progress, preview, open the PDF; a posting you already used offers to show the earlier application or tailor anyway), **Applications** (filter, status, preview, PDFs in either language, edit by hand, re-run), **Rate**, **Setup** and **Settings**. The app is portable: everything lives next to the exe in `Data\` (`settings.env`, `master.yaml`, `applications.db`, `variants\`, the WebView2 cache) and `Output\`, and nothing is written to the registry or your user profile. Move the folder and it keeps working. To update, replace the exe and `_internal\`.
 
-The **Master** tab shows the master as a CV builder. Tick items to build a CV by hand and watch the preview: summary, headline, bullets and their versions, projects, descriptions, skill lines and single skills. The page fit is checked on the real PDF a moment after each change. Save a PDF, or save the result into an application. Sections fold away, and the row buttons appear when you point at a row. Edit forms use one text box with an EN | PT switch (Ctrl+Enter saves, Esc cancels), and the app asks before discarding an unsaved edit or your ticks. The Edit, ↑ ↓, ✕, **+ bullet** and **+ version** buttons change `master.yaml` itself. **+ version** opens a form that starts as a copy of the item. With drafted wording on, you can add a note on what should change ("lead with the outcome", "shorter") and let the local model draft 3 versions, which appear as they are written; **Regenerate** asks for different ones, and **Use this** copies a draft into the form for you to edit. Drafts that contain numbers or names the original doesn't have are flagged. Nothing is written until you press Save version. Each change is validated like `validate-master` before it is written, comments and layout are kept, and **Undo** restores earlier versions, which are kept in `Data\master-history\`. **Settings** has two layers. The simple one has Engine (this PC or the Anthropic API), Quality (Fast, about 1-3 minutes; Careful, 6-10; Thorough, about 15, with the model thinking in its analysis) and a few general options. The advanced one has the model names and exact tuning that those choices fill in. Thorough mode needs a 16k-context name of the main model, which Setup creates in one click with no download.
+The **Master** tab shows the master as a CV builder. Tick items to build a CV by hand and watch the preview: summary, headline, bullets and their versions, projects, descriptions, skill lines and single skills. The page fit is checked on the real PDF a moment after each change. Save a PDF, or save the result into an application. Sections fold away, and the row buttons appear when you point at a row. Edit forms use one text box with a language switch (EN | ES, say; Ctrl+Enter saves, Esc cancels), and the app asks before discarding an unsaved edit or your ticks. In the second language, items that don't have it yet are marked "no ES" and shown in the main one. The Edit, ↑ ↓, ✕, **+ bullet**, **+ version** and **+ job / + project / + education** buttons change `master.yaml` itself (Edit on a job, project or education entry changes its title, dates and description). **+ version** opens a form that starts as a copy of the item. With drafted wording on, you can add a note on what should change ("lead with the outcome", "shorter") and let the local model draft 3 versions, which appear as they are written; **Regenerate** asks for different ones, and **Use this** copies a draft into the form for you to edit. Drafts that contain numbers or names the original doesn't have are flagged. Nothing is written until you press Save version. Each change is validated like `validate-master` before it is written, comments and layout are kept, and **Undo** restores earlier versions, which are kept in `Data\master-history\`. **Settings** starts with the CV's languages (main and second, or none), then two layers. The simple one has Engine (this PC or the Anthropic API), Quality (Fast, about 1-3 minutes; Careful, 6-10; Thorough, about 15, with the model thinking in its analysis) and a few general options. The advanced one has the model names and exact tuning that those choices fill in. Thorough mode needs a 16k-context name of the main model, which Setup creates in one click with no download.
 
-On first start the **Setup** tab checks Ollama: it starts it if it's installed but stopped, or offers to install it (winget or the official download page). It then offers the recommended models with download progress, and can import an existing `data` folder. PDFs come from headless Edge (Chrome elsewhere), so no GTK or WeasyPrint is needed; set `CV_PDF_ENGINE=weasyprint` to use WeasyPrint instead. From source: `.venv\Scripts\python cv_tailor_app.py` (uses `data\` and `.env` as usual).
+Without a `master.yaml`, the app starts with a short setup: the languages, your name and contact details, a summary, your jobs with a few bullets each, and education. It writes a first master that you then grow in the Master tab (skills, projects, more bullets and versions), or you can import an existing data folder instead. Every text is your own; nothing is drafted. On first start the **Setup** tab also checks Ollama: it starts it if it's installed but stopped, or offers to install it (winget or the official download page). It then offers the recommended models with download progress, and can import an existing `data` folder. PDFs come from headless Edge (Chrome elsewhere), so no GTK or WeasyPrint is needed; set `CV_PDF_ENGINE=weasyprint` to use WeasyPrint instead. From source: `.venv\Scripts\python cv_tailor_app.py` (uses `data\` and `.env` as usual).
 
 **Careful mode** (`new --careful`) is slower and makes better choices. The model first writes a short free-text analysis: which requirements matter, which items cover them, which summary, layout and versions fit. Hints computed in code help it: items whose tags match the posting and, with `CV_LLM_EMBED_MODEL`, the posting line each item is closest to. The constrained selection then follows that analysis, and one review pass can send it back once with concrete changes. Add worked examples to `data/worked_examples.yaml` (a posting plus notes on why a hand-made CV chose what it did) to show the model the reasoning you want. Free text never reaches the CV; every selection is validated as usual.
 

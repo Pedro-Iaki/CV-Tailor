@@ -4,7 +4,7 @@ This document explains how CV Tailor is built and why. For setup and day-to-day 
 
 ## The problem
 
-Applying to many job postings means tailoring a CV each time: picking the summary, the bullets and the skills that best fit the posting, in English or Brazilian Portuguese, on one page. An LLM is good at that judgment. It is also good at quietly inventing experience, inflating numbers and drifting in wording, which is unacceptable on a CV.
+Applying to many job postings means tailoring a CV each time: picking the summary, the bullets and the skills that best fit the posting, in the posting's language (English or Brazilian Portuguese, for the author), on one page. An LLM is good at that judgment. It is also good at quietly inventing experience, inflating numbers and drifting in wording, which is unacceptable on a CV.
 
 ## The core rule
 
@@ -12,8 +12,8 @@ Applying to many job postings means tailoring a CV each time: picking the summar
 
 Everything else follows from this rule:
 
-- The master resume (`data/master.yaml`) is the only source of CV text. Every summary, bullet, project and skill category has an id, tags, and an `en` and `pt` text written by the user.
-- The selection model receives an index of ids with their English text and returns ids only. Its output schema is built from the master, so every id field is an enum of ids that really exist.
+- The master resume (`data/master.yaml`) is the only source of CV text. Every summary, bullet, project and skill category has an id, tags, and a text per language written by the user (the master names its languages: a primary one, required everywhere, and an optional secondary one).
+- The selection model receives an index of ids with their text in the primary language and returns ids only. Its output schema is built from the master, so every id field is an enum of ids that really exist.
 - The template never sees model output. It receives a `RenderInput` (master, validated selection, language, i18n strings) and nothing else. Suggestions, unmatched requirements, job tags and meta fields aren't part of that model, so they can't leak into the PDF by mistake.
 - Tests check this with sentinel strings, and extract the text of rendered PDFs to check that every line traces back to the master or the i18n file.
 
@@ -39,6 +39,7 @@ The CLI and the MCP server are two thin front ends over the same pipeline. `pipe
 | Module | Responsibility |
 |---|---|
 | `schema.py` | Pydantic models for the master, selections, variants and meta |
+| `langs.py` | The languages a CV can be in (codes, names, prompt names) |
 | `master.py` | Load and validate the master; build the tag vocabulary and the LLM index |
 | `tags.py` | Deterministic tag extraction from a job description |
 | `llm.py` | Prompts, dynamic schemas, prompt caching, retry with errors |
@@ -120,7 +121,7 @@ The repository also ships the Claude Code side:
 
 Sometimes the right words aren't in the master: a bullet would match the posting better with the posting's vocabulary, or two bullets would read better as one. This feature lets a model draft wording without breaking the core rule. It is off by default (`CV_ALLOW_GENERATION=false`) and lives in one module, `generation.py`.
 
-1. The model drafts at most 5 items, each in EN and PT, with the ids it is based on and a rationale. A draft is a `rephrase` of one item, a `merge` of 2 or 3 bullets of the same job, or a `new` claim.
+1. The model drafts at most 5 items, each in every language of the master, with the ids it is based on and a rationale. A draft is a `rephrase` of one item, a `merge` of 2 or 3 bullets of the same job, or a `new` claim.
 2. Code checks each draft. A **number guard** reclassifies any rephrase or merge that contains a number missing from its sources as `new`.
 3. The user reviews each draft: `y` approves that exact text; `y, <comment>` asks for a revision, which is shown again and never stored directly; `n` rejects it, and `n, <comment>` also keeps the comment as feedback for later drafts.
 

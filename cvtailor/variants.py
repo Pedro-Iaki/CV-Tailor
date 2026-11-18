@@ -58,16 +58,17 @@ def selection_item_ids(sel: Selection) -> list[str]:
 def item_hash(master: Master, id_: str) -> str:
     it = item_index(master)[id_]
     o = it.obj
+    langs = master.langs  # en+pt hashes are the same as before languages were configurable
     if it.kind == "skill_category":
-        parts = [o.category.en, o.category.pt]
-        parts += [skill_item_text(i, "en") + "|" + skill_item_text(i, "pt") for i in o.items]
+        parts = [o.category.get(lang) for lang in langs]
+        parts += ["|".join(skill_item_text(i, lang) for lang in langs) for i in o.items]
     elif it.kind == "project":  # its bullets are hashed on their own
-        parts = [text_of(o.name, lang) + "|" + text_of(o.description, lang) for lang in ("en", "pt")]
-        parts += [f"{text_of(link.label, 'en')}|{text_of(link.label, 'pt')}|{link.url}" for link in o.links]
+        parts = [text_of(o.name, lang) + "|" + text_of(o.description, lang) for lang in langs]
+        parts += ["|".join([*(text_of(link.label, lang) for lang in langs), link.url]) for link in o.links]
     elif it.kind == "summary" and o.headline is not None:
-        parts = [o.en, o.pt, text_of(o.headline, "en"), text_of(o.headline, "pt")]
+        parts = [*(o.get(lang) for lang in langs), *(text_of(o.headline, lang) for lang in langs)]
     else:
-        parts = [o.en, o.pt]
+        parts = [o.get(lang) for lang in langs]
     return "sha256:" + hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
 
 

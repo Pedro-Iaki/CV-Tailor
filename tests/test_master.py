@@ -33,11 +33,15 @@ def test_rule1_unique_ids_pass_with_distinct_ids(master_dict):
 
 # 2. non-empty en/pt
 def test_rule2_empty_text_fail(master_dict):
-    master_dict["jobs"][0]["bullets"][0]["pt"] = "  "
+    # The primary language is required; the secondary one may be missing (see
+    # test_missing_secondary_texts).
+    master_dict["jobs"][0]["bullets"][0]["en"] = "  "
     master_dict["jobs"][0]["title"]["en"] = ""
+    master_dict["jobs"][0]["bullets"][1]["pt"] = ""
     errs = errors_for(master_dict)
-    assert any("bullet acme-dbx-pipeline-01: 'pt' is empty" in e for e in errs)
-    assert any("job job-acme title: 'en' is empty" in e for e in errs)
+    assert any("bullet acme-dbx-pipeline-01: 'en' (English) is empty" in e for e in errs)
+    assert any("job job-acme title: 'en' (English) is empty" in e for e in errs)
+    assert not any("'pt'" in e for e in errs)
 
 
 def test_rule2_bilingual_skill_item_pass(master_dict):
@@ -189,8 +193,8 @@ def test_layout_rejects_unknown_section(master_dict):
 
 
 def test_empty_text_fields(master_dict):
-    master_dict["profile"]["headline"] = {"en": "Data Engineer", "pt": ""}
+    master_dict["profile"]["headline"] = {"en": "", "pt": "Engenheiro de Dados"}
     master_dict["profile"]["links"][0]["label"] = " "
     errs = errors_for(master_dict)
-    assert any("profile headline: 'pt' is empty" in e for e in errs)
+    assert any("profile headline: 'en' (English) is empty" in e for e in errs)
     assert any("profile link 1 label: empty" in e for e in errs)

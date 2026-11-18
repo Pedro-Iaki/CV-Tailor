@@ -21,12 +21,12 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import db, ollama_setup
+from . import db, langs, ollama_setup
 from .config import Config, app_home, default_dirs, is_portable, settings_path
 from .master import MasterError
 from .pipeline import (IO, Context, NewOptions, PipelineError, get_app, pdf_path_for, regen,
                        rerender, run_new)
-from .render import PdfEngineMissing, find_browser, make_render_input, render_html
+from .render import MissingTextError, PdfEngineMissing, find_browser, make_render_input, render_html
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
 
@@ -110,6 +110,18 @@ def with_quality(cfg: Config, quality: Optional[str]) -> Config:
     return dataclasses.replace(cfg, **{fields[k][0]: fields[k][1](v) for k, v in keys.items() if k in fields})
 
 
+def _message_page(text: str) -> str:
+    """A small page in place of a CV preview that can't be shown."""
+    import html
+    return ("<body style=\"margin:0;height:100vh;display:grid;place-items:center;font:14px 'Segoe UI',"
+            "sans-serif;color:#6d6c66;background:#fff;text-align:center;padding:0 32px\">"
+            f"<div>{html.escape(text)}</div></body>")
+
+
+def _langs_view(codes: list[str]) -> list[dict]:
+    return [{"code": c, "name": langs.name(c)} for c in codes]
+
+
 def _settings_values() -> dict:
     try:
         from dotenv import dotenv_values
@@ -181,7 +193,7 @@ class Api:
         def go() -> None:
             try:
                 job.result = fn(job)
-            except (PipelineError, MasterError, PdfEngineMissing) as e:
+            except (PipelineError, MasterError, PdfEngineMissing, MissingTextError) as e:
                 job.error = str(e)
             except Exception as e:  # noqa: BLE001 - shown to the user, not swallowed
                 job.error = f"{type(e).__name__}: {e}"
@@ -201,10 +213,11 @@ class Api:
         ctx = self._ctx()
         cfg = ctx.cfg
         settings = settings_path()
-        master_ok, master_msg = True, ""
+        master_ok, master_msg, languages = True, "", None
         try:
             m = ctx.master
             master_msg = f"{len(m.summaries)} summaries, {len(m.jobs)} jobs, {len(m.projects)} projects"
+            languages = {"primary": m.primary, "secondary": m.languages.secondary, "list": _langs_view(m.langs)}
         except MasterError as e:
             master_ok, master_msg = False, "\n".join(e.errors) if getattr(e, "errors", None) else str(e)
         except FileNotFoundError:
@@ -214,7 +227,8 @@ class Api:
             "output_dir": str(cfg.output_dir), "settings_file": str(settings),
             "local": bool(cfg.llm_base_url), "model": cfg.model, "careful_default": cfg.careful,
             "pdf_engine": cfg.pdf_engine, "browser": find_browser(),
-            "master_ok": master_ok, "master": master_msg,
+            "master_ok": master_ok, "master": master_msg, "master_missing": not cfg.master_path.exists(),
+            "languages": languages, "language_choices": langs.choices(),
             "ollama": ollama_setup.status(cfg.llm_base_url) if cfg.llm_base_url else None,
             "recommended": [{"name": n, "size": s, "why": w} for n, s, w in ollama_setup.RECOMMENDED],
             "main_model": ollama_setup.MAIN_MODEL, "long_context_model": ollama_setup.LONG_CONTEXT_MODEL,
@@ -268,7 +282,10 @@ class Api:
         ctx = self._ctx()
         from .pipeline import stored_selection
         app = get_app(ctx, int(app_id))
-        return render_html(make_render_input(ctx.master, stored_selection(ctx, app), lang or app["lang"]))
+        try:
+            return render_html(make_render_input(ctx.master, stored_selection(ctx, app), lang or app["lang"]))
+        except (MissingTextError, PipelineError) as e:
+            return _message_page(str(e))
 
     def open_pdf(self, app_id: int, lang: str) -> str:
         """Open the PDF in the default viewer, rendering it first if it doesn't exist."""
@@ -348,10 +365,13 @@ class Api:
             m = ctx.master
         except (MasterError, FileNotFoundError) as e:
             return {"error": "\n".join(getattr(e, "errors", None) or [str(e)])}
+        from .master import missing_texts
         return {"master": m.model_dump(mode="json"),
                 "conflicts": {k: sorted(v) for k, v in alt_conflicts(m).items()},
                 "apps": self.list_apps(), "undo": self._editor().history_count(),
-                "allow_generation": ctx.cfg.allow_generation}
+                "allow_generation": ctx.cfg.allow_generation, "langs": _langs_view(m.langs),
+                # per language other than the primary: ids of items (or entries) with no text in it
+                "missing": {c: sorted({i for i, _ in missing_texts(m, c)}) for c in m.langs[1:]}}
 
     def _selection(self, data: dict):
         from .schema import Selection
@@ -368,8 +388,28 @@ class Api:
         try:
             html = render_html(make_render_input(ctx.master, sel, lang))
         except Exception as e:  # noqa: BLE001 - e.g. an id the master no longer has
-            html, errors = "", [*errors, f"preview failed: {e}"]
+            html, errors = "", [*errors, str(e) if isinstance(e, MissingTextError) else f"preview failed: {e}"]
         return {"html": html, "errors": errors}
+
+    def set_languages(self, primary: str, secondary: Optional[str]) -> dict:
+        """Change the CV's languages in master.yaml (Settings tab)."""
+        from .master_edit import EditError
+        try:
+            m = self._editor().set_languages(primary, secondary or None)
+        except (EditError, MasterError) as e:
+            return {"ok": False, "errors": e.errors}
+        from .master import missing_texts
+        missing = len(missing_texts(m, m.languages.secondary)) if m.languages.secondary else 0
+        return {"ok": True, "missing": missing, **self.get_state()}
+
+    def create_master(self, data: dict) -> dict:
+        """The setup wizard: write a first master.yaml from the user's answers."""
+        from .master_edit import EditError, create_master
+        try:
+            create_master(self._ctx().cfg.master_path, data)
+        except EditError as e:
+            return {"ok": False, "errors": e.errors}
+        return {"ok": True, **self.get_state()}
 
     def builder_fit(self, selection: dict, lang: str) -> str:
         """Render the real PDF to count its pages (a job: Edge takes a second or two)."""

@@ -202,12 +202,12 @@ def test_comment_triggers_revision_then_approval(gen_ctx, quiet_io):
     res = review(ctx, 1, {p["id"]: "y, start with 'Designed' like the posting"})
     assert res.facts == [] and len(res.revised) == 1
     child = res.revised[0]
-    assert child["depth"] == 1 and child["parent_id"] == p["id"] and child["en"].startswith("Designed")
+    assert child["depth"] == 1 and child["parent_id"] == p["id"] and child["texts"]["en"].startswith("Designed")
     revise_call = client.calls[-1]
     assert "start with 'Designed'" in revise_call["messages"][0]["content"]
     res2 = review(ctx, 1, {child["id"]: "y"})
     [fact] = load_facts(ctx.db())
-    assert res2.facts == [fact["id"]] and fact["en"].startswith("Designed")
+    assert res2.facts == [fact["id"]] and fact["texts"]["en"].startswith("Designed")
     assert fact["comment"] == "start with 'Designed' like the posting"
 
 
@@ -242,12 +242,12 @@ def test_promote_moves_unsafe_to_facts(gen_ctx, quiet_io):
     uid = review(ctx, 1, {p["id"]: "y"}).unsafe[0]
     conn = ctx.db()
     conn.execute("BEGIN")
-    promote(conn, uid, en="Built dbt models for payment reporting (internal tool).")
+    promote(conn, uid, texts={**p["texts"], "en": "Built dbt models for payment reporting (internal tool)."})
     conn.execute("COMMIT")
     ctx.invalidate_master()
     assert load_unsafe(conn) == []
     [fact] = load_facts(conn)
-    assert fact["approved_via"] == "promote" and fact["en"].endswith("(internal tool).")
+    assert fact["approved_via"] == "promote" and fact["texts"]["en"].endswith("(internal tool).")
     assert uid in {b.id for b in ctx.master.jobs[0].bullets}
 
 
@@ -303,5 +303,5 @@ def test_cli_review_loop(gen_ctx, monkeypatch):
     assert "approve -> UNSAFE" in r.output and "could not read reply" in r.output
     assert "review done: 1 fact(s) added, 1 unsafe item(s) stored." in r.output
     [fact] = load_facts(ctx.db())
-    assert fact["en"].startswith("Designed")
+    assert fact["texts"]["en"].startswith("Designed")
     assert db.get_application(ctx.db(), 1)["generated_ids"] == [fact["id"]]

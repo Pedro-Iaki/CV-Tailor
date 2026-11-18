@@ -41,3 +41,83 @@ pt:
   range_sep: " – "
   sep: " · "
   title_sep: ", "
+es:
+  headings:
+    summary: Perfil
+    experience: Experiencia
+    project: Proyecto
+    projects: Proyectos
+    skills: Habilidades
+    education: Formación
+  skills:
+    hands_on: Experiencia práctica
+    working: Conocimientos funcionales
+    familiar: Familiaridad con
+  present: Actualidad
+  in_progress: En curso
+  expected: previsto
+  months: [ene., feb., mar., abr., may., jun., jul., ago., sept., oct., nov., dic.]
+  date_format: "{mm}/{year}"
+  range_sep: " – "
+  sep: " · "
+  title_sep: ", "
+fr:
+  headings:
+    summary: Profil
+    experience: Expérience
+    project: Projet
+    projects: Projets
+    skills: Compétences
+    education: Formation
+  skills:
+    hands_on: Pratique
+    working: Connaissances opérationnelles
+    familiar: Notions de
+  present: Aujourd'hui
+  in_progress: En cours
+  expected: prévu
+  months: [janv., févr., mars, avr., mai, juin, juil., août, sept., oct., nov., déc.]
+  date_format: "{mm}/{year}"
+  range_sep: " – "
+  sep: " · "
+  title_sep: ", "
+de:
+  headings:
+    summary: Profil
+    experience: Berufserfahrung
+    project: Projekt
+    projects: Projekte
+    skills: Kenntnisse
+    education: Ausbildung
+  skills:
+    hands_on: Praxiserfahrung
+    working: Gute Kenntnisse
+    familiar: Grundkenntnisse
+  present: heute
+  in_progress: laufend
+  expected: voraussichtlich
+  months: [Jan., Feb., März, Apr., Mai, Juni, Juli, Aug., Sept., Okt., Nov., Dez.]
+  date_format: "{mm}/{year}"
+  range_sep: " – "
+  sep: " · "
+  title_sep: ", "
+it:
+  headings:
+    summary: Profilo
+    experience: Esperienza
+    project: Progetto
+    projects: Progetti
+    skills: Competenze
+    education: Formazione
+  skills:
+    hands_on: Esperienza pratica
+    working: Conoscenza operativa
+    familiar: Familiarità con
+  present: oggi
+  in_progress: in corso
+  expected: previsto
+  months: [gen., feb., mar., apr., mag., giu., lug., ago., set., ott., nov., dic.]
+  date_format: "{mm}/{year}"
+  range_sep: " – "
+  sep: " · "
+  title_sep: ", "

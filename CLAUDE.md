@@ -1,6 +1,6 @@
 # CV Tailor
 
-A local Python CLI and MCP server that builds one-page EN/PT-BR CV PDFs by selecting and ordering items from `data/master.yaml`. The design and its known limitations are in [docs/DESIGN.md](docs/DESIGN.md).
+A local Python CLI and MCP server that builds one-page CV PDFs by selecting and ordering items from `data/master.yaml`, in the languages the master names (`languages: {primary, secondary}`; English + Brazilian Portuguese when absent). The design and its known limitations are in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## The core rule (do not break it)
 
@@ -26,7 +26,8 @@ Implementation rules:
 - `cvtailor/careful.py`: careful mode (`new --careful`). Hints from tags and embeddings, a free-text analysis pass (with `data/worked_examples.yaml`), the constrained selection, then one review and revision. Free text only goes back to the model or to verbose output, never into the CV.
 - `cvtailor/ratings.py`: `apply.py rate`, a local page (127.0.0.1) for blind 1-5 ratings of CVs (applications plus JSONL candidates), stored in the `cv_ratings` table.
 - `cvtailor/desktop.py` + `cvtailor/ui/index.html`: the desktop app (pywebview, WebView2 on Windows) over the same pipeline. Tabs: New CV, Applications, Master (builder), Rate, Setup, Settings (simple presets over advanced keys). Long work runs as polled jobs. Each call gets its own Context (SQLite is per-thread). `cv_tailor_app.py` is the entry point; `build_portable.ps1` builds the portable folder with PyInstaller.
-- `cvtailor/master_edit.py`: the Master tab's editor for master.yaml (ruamel round-trip, so comments and layout survive). Each change is validated with the master checks before writing; earlier versions go to `Data/master-history/` for undo. It only applies the user's own edits; it never generates text.
+- `cvtailor/langs.py`: the supported languages. Texts are keyed by language code everywhere (master items, facts, drafts); never hard-code `en`/`pt`. The primary language is required on every item; a missing secondary text is not an error (`missing_texts`), `gate_language` hides such items from the selector and rendering refuses them (`MissingTextError`).
+- `cvtailor/master_edit.py`: the Master tab's editor for master.yaml (ruamel round-trip, so comments and layout survive). Each change is validated with the master checks before writing; earlier versions go to `Data/master-history/` for undo. It only applies the user's own edits; it never generates text. `create_master` writes the first master from the setup wizard's answers; `set_languages` changes the languages without touching any text.
 - `cvtailor/ollama_setup.py`: Ollama detection, start, install (winget or download page), model pulls, and the 16k-context name of the main model that thorough mode uses.
 - Portable layout (`config.py`): the packaged exe, or `CV_PORTABLE=1`, keeps everything next to the exe in `Data/` (with `settings.env`) and `Output/`. From source, `data/`, `output/` and `.env` stay as before.
 - PDFs: `render.BrowserRenderer` prints through headless Edge or Chrome (nothing bundled, same engine as the window); `WeasyRenderer` is the fallback. `CV_PDF_ENGINE` picks one.

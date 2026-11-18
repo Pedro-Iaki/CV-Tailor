@@ -8,6 +8,7 @@ import pytest
 
 from cvtailor.master import load_master
 from cvtailor.master_edit import EditError, MasterEditor
+from cvtailor.schema import text_of
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "master.example.yaml"
 
@@ -27,7 +28,7 @@ def test_update_text_keeps_comments_and_history(ed):
     before = ed.path.read_text(encoding="utf-8")
     m = ed.update("acme-delta-02", {"en": "Migrated 40 tables to Delta Lake.", "tags": "delta, data-modeling"})
     b = next(b for j in m.jobs for b in j.bullets if b.id == "acme-delta-02")
-    assert b.en == "Migrated 40 tables to Delta Lake." and b.tags == ["delta", "data-modeling"]
+    assert b.get("en") == "Migrated 40 tables to Delta Lake." and b.tags == ["delta", "data-modeling"]
     after = ed.path.read_text(encoding="utf-8")
     assert "# Example master file." in after and "# Projects can have a context line" in after
     changed = [l for l in after.splitlines() if l not in before.splitlines()]
@@ -39,8 +40,8 @@ def test_invalid_change_is_rejected_and_file_untouched(ed):
     before = ed.path.read_text(encoding="utf-8")
     with pytest.raises(EditError, match="at least one tag"):
         ed.update("acme-delta-02", {"tags": ""})
-    with pytest.raises(EditError, match="can't be empty"):
-        ed.update("acme-delta-02", {"pt": "  "})
+    with pytest.raises(EditError, match="English text can't be empty"):
+        ed.update("acme-delta-02", {"en": "  "})
     assert ed.path.read_text(encoding="utf-8") == before and ed.history_count() == 0
 
 
@@ -70,7 +71,8 @@ def test_skill_category_items_and_duplicate_id(ed):
     m = ed.update("skills-languages", {"items": ["Python", {"en": "SQL", "pt": "SQL"},
                                                  {"en": "Shell scripting", "pt": "Scripts shell"}]})
     cat = next(c for c in m.skills.hands_on if c.id == "skills-languages")
-    assert [getattr(i, "en", i) for i in cat.items] == ["Python", "SQL", "Shell scripting"]
+    assert [text_of(i, "en") for i in cat.items] == ["Python", "SQL", "Shell scripting"]
+    assert isinstance(cat.items[1], str)  # the same text in every language is written once
     with pytest.raises(EditError, match="already used"):
         ed.add("summary", None, {"id": "sum-platform", "en": "x", "pt": "y", "tags": ["a"]})
     with pytest.raises(EditError, match="not in the master"):

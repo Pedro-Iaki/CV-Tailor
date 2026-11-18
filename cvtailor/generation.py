@@ -26,6 +26,7 @@ from typing import Any, Optional
 
 from . import db
 from .facts import add_fact, add_unsafe, next_id
+from .langs import name as lang_name
 from .llm import LLMError
 from .master import TAG_RE, item_index, item_text
 from .pipeline import (
@@ -75,6 +76,15 @@ def numbers(text: str) -> set[str]:
     return {n.replace(",", ".") for n in NUM_RE.findall(text or "")}
 
 
+def _all_text(obj: Any) -> str:
+    """Every language's text of an item, for the number and name guards."""
+    return " ".join(t for t in obj.texts.values() if t)
+
+
+def draft_texts(raw: dict[str, Any], langs: list[str]) -> dict[str, str]:
+    return {c: " ".join(str(raw.get(c) or "").split()) for c in langs}
+
+
 # ---------------------------------------------------------------- checking drafts
 
 def check_proposal(raw: dict[str, Any], master: Master) -> tuple[Optional[dict[str, Any]], list[str]]:
@@ -83,13 +93,13 @@ def check_proposal(raw: dict[str, Any], master: Master) -> tuple[Optional[dict[s
     owners = {e.id for e in [*master.jobs, *master.projects]}  # what a bullet can belong to
     kind = raw.get("kind")
     origin = raw.get("origin")
-    en = " ".join(str(raw.get("en") or "").split())
-    pt = " ".join(str(raw.get("pt") or "").split())
+    texts = draft_texts(raw, master.langs)
     if kind not in ("bullet", "summary") or origin not in ("rephrase", "merge", "new"):
         return None, ["invalid kind or origin"]
-    if not en or not pt:
-        return None, ["draft is missing its English or Portuguese text"]
-    if len(en) > MAX_TEXT or len(pt) > MAX_TEXT:
+    empty = [lang_name(c) for c, t in texts.items() if not t]
+    if empty:
+        return None, [f"draft is missing its {' and '.join(empty)} text"]
+    if any(len(t) > MAX_TEXT for t in texts.values()):
         return None, ["draft is too long"]
     based = list(dict.fromkeys(raw.get("based_on") or []))
     for b in based:
@@ -121,8 +131,8 @@ def check_proposal(raw: dict[str, Any], master: Master) -> tuple[Optional[dict[s
     if origin in ("rephrase", "merge"):
         src = set()
         for b in based:
-            src |= numbers(idx[b].obj.en) | numbers(idx[b].obj.pt)
-        extra = (numbers(en) | numbers(pt)) - src
+            src |= numbers(_all_text(idx[b].obj))
+        extra = numbers(" ".join(texts.values())) - src
         if extra:
             origin = "new"
             notes.append(f"contains {', '.join(sorted(extra))}, not found in its sources: "
@@ -151,8 +161,7 @@ def check_proposal(raw: dict[str, Any], master: Master) -> tuple[Optional[dict[s
         "based_on": based,
         "replaces": replaces,
         "tags": tags,
-        "en": en,
-        "pt": pt,
+        "texts": texts,
         "rationale": str(raw.get("rationale") or "").strip() or None,
         "notes": "; ".join(notes) or None,
     }, notes
@@ -187,10 +196,14 @@ def _insert_proposal(conn, app_id: int, p: dict[str, Any], *, model: str,
 
 def recent_feedback(conn, limit: int = 15) -> list[str]:
     rows = conn.execute(
-        "SELECT status, origin, en, comment FROM proposals WHERE comment IS NOT NULL ORDER BY id DESC LIMIT ?",
+        "SELECT status, origin, texts, comment FROM proposals WHERE comment IS NOT NULL ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
-    return [f"- {r['status']} {r['origin']} draft \"{r['en'][:140]}\": {r['comment']}" for r in rows]
+    out = []
+    for r in rows:
+        first = next(iter(json.loads(r["texts"] or "{}").values()), "")
+        out.append(f"- {r['status']} {r['origin']} draft \"{first[:140]}\": {r['comment']}")
+    return out
 
 
 def _sources_text(master: Master, ids: list[str]) -> str:
@@ -199,7 +212,7 @@ def _sources_text(master: Master, ids: list[str]) -> str:
     for i in dict.fromkeys(ids):
         if i in idx:
             o = idx[i].obj
-            lines.append(f"{i}\n  en: {o.en}\n  pt: {o.pt}")
+            lines.append(i + "".join(f"\n  {c}: {o.get(c)}" for c in master.langs))
     return "\n".join(lines) or "(none)"
 
 
@@ -214,8 +227,8 @@ def create_proposals(ctx: Context, app_id: int, io: IO = IO(), max_items: int = 
 
     unmatched = app.get("unmatched_requirements")
     context = "\n".join([
-        "CURRENT SELECTION (id and English text):",
-        *describe_selection(sel, master, "en"),
+        f"CURRENT SELECTION (id and {lang_name(master.primary)} text):",
+        *describe_selection(sel, master),
         "",
         "UNMATCHED REQUIREMENTS: " + (", ".join(unmatched) if unmatched else "(none recorded)"),
         "",
@@ -257,10 +270,9 @@ def proposal_view(p: dict[str, Any], master: Master) -> dict[str, Any]:
         "job_id": p["job_id"],
         "if_approved": ("FACT (reusable, used in this CV)" if p["destination"] == "fact"
                         else "UNSAFE (new claim; not used until the user promotes it in the terminal)"),
-        "sources": [{"id": b, "text": item_text(idx[b], "en")} for b in p["based_on"] if b in idx],
+        "sources": [{"id": b, "text": item_text(idx[b], master.primary)} for b in p["based_on"] if b in idx],
         "replaces": p["replaces"],
-        "en": p["en"],
-        "pt": p["pt"],
+        "texts": p["texts"],
         "rationale": p["rationale"],
         "notes": p["notes"],
         "revision": p["depth"],
@@ -277,8 +289,8 @@ def format_proposal(p: dict[str, Any], master: Master, n: Optional[int] = None) 
     lines = [f"{head}#{p['id']} {p['origin']} | {where} | {dest}{rev}"]
     for b in p["based_on"]:
         if b in idx:
-            lines.append(f"    from {b}: {item_text(idx[b], 'en')}")
-    lines += [f"    EN: {p['en']}", f"    PT: {p['pt']}"]
+            lines.append(f"    from {b}: {item_text(idx[b], master.primary)}")
+    lines += [f"    {c.upper()}: {t}" for c, t in p["texts"].items()]
     if p["rationale"]:
         lines.append(f"    why: {p['rationale']}")
     if p["notes"]:
@@ -333,7 +345,8 @@ def review(ctx: Context, app_id: int, replies: dict[int, str]) -> ReviewResult:
 
 def _revise(ctx: Context, app_id: int, p: dict, reply: str, comment: str, res: ReviewResult) -> None:
     master = ctx.master
-    draft = {k: p[k] for k in ("kind", "origin", "based_on", "replaces", "tags", "en", "pt", "rationale")}
+    draft = {k: p[k] for k in ("kind", "origin", "based_on", "replaces", "tags", "rationale")}
+    draft.update(p["texts"])
     draft["job_id"] = p["job_id"] or ""
     try:
         raw, usage = ctx.get_llm().revise(master, draft, comment, _sources_text(master, p["based_on"] + p["replaces"]))
@@ -372,7 +385,7 @@ def _store(ctx: Context, app_id: int, p: dict, reply: str, res: ReviewResult) ->
             " SELECT comment FROM chain WHERE comment IS NOT NULL", (p["id"],))]
         item = {
             "id": new_id, "kind": p["kind"], "job_id": p["job_id"], "origin": p["origin"],
-            "based_on": p["based_on"], "tags": p["tags"], "en": p["en"], "pt": p["pt"],
+            "based_on": p["based_on"], "tags": p["tags"], "texts": p["texts"],
             "comment": " | ".join(reversed(comments)) or None,
             "proposal_id": p["id"], "source_application_id": app_id,
         }
@@ -496,28 +509,27 @@ def version_sources(master: Master, item_id: str) -> tuple[Any, list[Any], list[
         where = "the profile summary at the top of the CV"
     else:
         o = idx[it.parent]
-        where = f"a bullet of the {o.kind} '{item_text(o, 'en')}'" + (
+        where = f"a bullet of the {o.kind} '{item_text(o, master.primary)}'" + (
             f" at {o.obj.company}" if getattr(o.obj, "company", None) else "")
     return it.obj, others, versions, where
 
 
-def check_version(draft: dict[str, Any], sources: list[Any]) -> Optional[dict[str, Any]]:
+def check_version(draft: dict[str, Any], sources: list[Any],
+                  langs: list[str] = ("en", "pt")) -> Optional[dict[str, Any]]:
     """Normalize a drafted version and flag what its sources don't contain."""
-    en = " ".join(str(draft.get("en") or "").split())
-    pt = " ".join(str(draft.get("pt") or "").split())
-    if not en or not pt or len(en) > MAX_TEXT * 2 or len(pt) > MAX_TEXT * 2:
+    texts = draft_texts(draft, list(langs))
+    if not all(texts.values()) or any(len(t) > MAX_TEXT * 2 for t in texts.values()):
         return None
-    src_text = " ".join(f"{s.en} {s.pt}" for s in sources)
+    src_text = " ".join(_all_text(s) for s in sources)
     warnings = []
-    extra = (numbers(en) | numbers(pt)) - numbers(src_text)
+    extra = numbers(" ".join(texts.values())) - numbers(src_text)
     if extra:
         warnings.append("numbers not in the original: " + ", ".join(sorted(extra)))
     known = _words(src_text)
-    new = sorted((_names(en) | _names(pt)) - known)
+    new = sorted(set().union(*(_names(t) for t in texts.values())) - known)
     if new:
         warnings.append("names not in the original: " + ", ".join(new))
-    return {"en": en, "pt": pt, "note": " ".join(str(draft.get("note") or "").split()),
-            "warnings": warnings}
+    return {**texts, "note": " ".join(str(draft.get("note") or "").split()), "warnings": warnings}
 
 
 def drafting_llm(ctx: Context) -> tuple[Any, str, Optional[str], int]:
@@ -542,36 +554,41 @@ def draft_versions(ctx: Context, item_id: str, note: str = "", previous: Optiona
     it streams (local servers), for a live preview only."""
     ensure_enabled(ctx)
     master = ctx.master
+    langs, first = master.langs, master.primary
     item, others, versions, where = version_sources(master, item_id)
 
-    def block(items: list[Any]) -> list[str]:
-        return [f"- en: {x.en}\n  pt: {x.pt}" for x in items] or ["(none)"]
+    def texts(x: Any, indent: str) -> str:
+        return ("\n" + indent).join(f"{c}: {x.get(c)}" for c in langs)
 
-    shown = [{"en": str(d.get("en", "")), "pt": str(d.get("pt", ""))} for d in (previous or [])][-12:]
+    def block(items: list[Any]) -> list[str]:
+        return [f"- {texts(x, '  ')}" for x in items] or ["(none)"]
+
+    shown = [{c: str(d.get(c, "")) for c in langs} for d in (previous or [])][-12:]
     context = "\n".join([
-        f"ITEM ({where}), id {item_id}:", f"en: {item.en}", f"pt: {item.pt}", "",
+        f"ITEM ({where}), id {item_id}:", texts(item, ""), "",
         "OTHER ITEMS OF THE SAME ENTRY:", *block(others), "",
         "EXISTING VERSIONS OF THIS ITEM:", *block(versions), "",
         "DRAFTS ALREADY OFFERED (write different ones):",
-        *([f"- {d['en']}" for d in shown] or ["(none)"]), "",
+        *([f"- {d[first]}" for d in shown] or ["(none)"]), "",
         "CANDIDATE'S NOTE:", note.strip() or "(none: offer a few good alternatives, e.g. tighter, outcome first)",
     ])
     llm, label, reasoning, max_tokens = drafting_llm(ctx)
     io.out(f"Drafting with {label}...")
     started = time.monotonic()
     try:
-        raws, usage = llm.versions(context, n=n, reasoning=reasoning, max_tokens=max_tokens, on_text=on_text)
+        raws, usage = llm.versions(context, n=n, reasoning=reasoning, max_tokens=max_tokens, on_text=on_text,
+                                   langs=langs)
     except LLMError as e:
         raise GenerationError(str(e)) from None
     io.out(f"{usage.output_tokens} tokens in {time.monotonic() - started:.0f} s")
     sources = [item, *versions] + (others if note.strip() else [])
-    seen = {item.en, *(v.en for v in versions), *(d["en"] for d in shown)}
+    seen = {item.get(first), *(v.get(first) for v in versions), *(d[first] for d in shown)}
     out = []
     for raw in raws:
-        d = check_version(raw, sources)
-        if d is None or d["en"] in seen:
+        d = check_version(raw, sources, langs)
+        if d is None or d[first] in seen:
             continue
-        seen.add(d["en"])
+        seen.add(d[first])
         out.append(d)
     if not out:
         raise GenerationError("the model returned no usable drafts; try again or change the note")
