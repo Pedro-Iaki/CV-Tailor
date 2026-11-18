@@ -64,7 +64,8 @@ pre.job{margin:0;white-space:pre-wrap;overflow:auto;background:var(--panel);bord
 .vpanel{margin:4px 0 10px 30px;padding:8px 12px;border:1px solid var(--accent);border-radius:8px;display:grid;gap:8px}
 .vpanel textarea{min-height:52px}.vdrafts{display:grid;gap:0;max-height:420px;overflow:auto}
 .vdraft{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:7px 0;border-top:1px dashed var(--line)}
-.vdraft .pt{color:var(--muted)}.vdraft .warn{font-size:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}.seg button{border:0;border-radius:0;padding:2px 10px;font-size:12px}
+.seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:600}.vdraft .warn{font-size:12px}
 .berr{color:var(--bad);font-size:12.5px;white-space:pre-wrap;max-height:120px;overflow:auto}
 details.adv{margin-top:12px}details.adv summary{cursor:pointer;font-weight:600;padding:6px 0}
 .preset{display:grid;gap:6px}.preset label{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px solid var(--line);border-radius:8px}
@@ -308,7 +309,7 @@ function itemRow(it, pick, opts = {}){
   if (B.editing === it.id) return textForm(it);
   const alt = (it.alt_of || []).length, tags = (it.tags || []).join(', ');
   return `<div class="bi ${alt ? 'ver' : ''}">${pick}
-    <div class="txt">${esc(T(it))}${alt ? `<span class="badge">version of ${esc(it.alt_of.join(', '))}</span>` : ''}
+    <div class="txt">${esc(T(it))}${alt ? `<span class="badge" title="Another wording of ${esc(it.alt_of.join(' + '))}: a CV shows at most one of them">version of ${esc(it.alt_of.join(', '))}</span>` : ''}
       <div class="tagl">${esc(it.id)}${tags ? ' · ' + esc(tags) : ''}</div></div>${acts(it.id, {...opts, fact: !!it.origin})}</div>` +
     (B.ver && B.editing === 'ver:' + it.id ? versionPanel() : '');
 }
@@ -322,18 +323,21 @@ function versionPanel(){
   else gen = `<label class="small">What should change? (optional)<textarea data-v="note" placeholder="e.g. lead with the outcome, shorter, closer to 'data platform' wording">${esc(v.note)}</textarea></label>
     <div class="row"><button class="mini primary" data-act="gen" ${busy}>${v.drafts.length ? 'Regenerate' : 'Generate drafts'}</button>
       <span class="small ${v.error ? 'bad' : 'muted'}" id="verStatus" style="white-space:pre-wrap">${esc(v.error || v.status)}</span></div>` +
-    (v.drafts.length ? `<div class="vdrafts">` + v.drafts.map((d, i) => `<div class="vdraft"><div>${esc(d.en)}</div>
-        <button class="mini" data-act="usedraft" data-i="${i}">Use this</button><div class="pt">${esc(d.pt)}</div><span></span>
+    (v.drafts.length ? `<div class="vdrafts">` + v.drafts.map((d, i) => `<div class="vdraft"><div>${esc(d[v.lang])}</div>
+        <button class="mini" data-act="usedraft" data-i="${i}" title="Copies both languages into the form">Use this</button>
         <div class="tagl">${esc(d.note)}</div><span></span>${d.warnings.map(w => `<div class="warn">⚠ ${esc(w)}: only keep it if it's true</div><span></span>`).join('')}</div>`).join('') + '</div>' : '');
-  return `<div class="vpanel" data-form="ver"><b class="small">New version of ${esc(v.id)}</b>${gen}
-    <div class="bform"><label class="small">English<textarea data-v="en">${esc(v.en)}</textarea></label>
-      <label class="small">Portuguese<textarea data-v="pt">${esc(v.pt)}</textarea></label>
+  const other = v.lang === 'en' ? 'pt' : 'en', NAME = {en: 'English', pt: 'Portuguese'};
+  const changed = l => v[l].trim() !== v.orig[l].trim(), stale = changed('en') !== changed('pt') ? (changed('en') ? 'pt' : 'en') : null;
+  return `<div class="vpanel" data-form="ver"><div class="row"><b class="small grow">New version of ${esc(v.id)}</b>
+      <span class="seg">${['en', 'pt'].map(l => `<button data-act="verlang" data-l="${l}" class="${v.lang === l ? 'on' : ''}">${l.toUpperCase()}</button>`).join('')}</span></div>${gen}
+    <div class="bform"><label class="small">${NAME[v.lang]}<textarea data-v="text" data-l="${v.lang}">${esc(v[v.lang])}</textarea></label>
+      ${stale ? `<div class="warn small">${stale === v.lang ? `This ${NAME[stale]} text is still the original's, but the ${NAME[other]} was changed.` : `The ${NAME[stale]} text still matches the original. Switch to ${stale.toUpperCase()} to update it.`}</div>` : ''}
       <label class="small">Tags (comma separated)<input type="text" data-v="tags" value="${esc(v.tags)}"></label>
       <div class="row"><button class="primary mini" data-act="savever">Save version</button><button class="mini" data-act="cancel">Cancel</button></div></div></div>`;
 }
 function keepVer(){  // typed text survives redraws
   const f = B.ver && document.querySelector('[data-form="ver"]'); if (!f) return;
-  f.querySelectorAll('[data-v]').forEach(e => B.ver[e.dataset.v] = e.value);
+  f.querySelectorAll('[data-v]').forEach(e => B.ver[e.dataset.v === 'text' ? e.dataset.l : e.dataset.v] = e.value);
 }
 async function generateVersions(){
   keepVer(); const v = B.ver; v.busy = true; v.error = ''; v.status = 'Starting...'; drawBuilder();
@@ -487,7 +491,7 @@ $('bLeft').addEventListener('click', async e => {
   if (act === 'version') {  // open the version panel: the form starts as a copy of the item
     const it = [...B.m.summaries, ...owners().flatMap(o => o.bullets)].find(x => x.id === id);
     keepVer(); B.editing = 'ver:' + id;
-    B.ver = {id, en: it.en, pt: it.pt, tags: (it.tags || []).join(', '), note: '', drafts: [], busy: false, status: '', error: ''};
+    B.ver = {id, lang: B.lang, orig: {en: it.en, pt: it.pt}, en: it.en, pt: it.pt, tags: (it.tags || []).join(', '), note: '', drafts: [], busy: false, status: '', error: ''};
     drawBuilder(); return;
   }
   if (act === 'genon') {
@@ -495,9 +499,10 @@ $('bLeft').addEventListener('click', async e => {
     keepVer(); await api('save_settings', {CV_ALLOW_GENERATION: 'true'}); B.allowGen = true; drawBuilder(); return;
   }
   if (act === 'gen') { await generateVersions(); return; }
-  if (act === 'usedraft') {  // into the form (not a redraw: that would read the old form back)
-    const d = B.ver.drafts[+b.dataset.i], f = document.querySelector('[data-form="ver"]');
-    f.querySelector('[data-v=en]').value = B.ver.en = d.en; f.querySelector('[data-v=pt]').value = B.ver.pt = d.pt; return;
+  if (act === 'verlang') { keepVer(); B.ver.lang = b.dataset.l; drawBuilder(); return; }  // keepVer saves the text first
+  if (act === 'usedraft') {  // both languages into the form; set the box too, since a redraw reads it back
+    const d = B.ver.drafts[+b.dataset.i]; document.querySelector('[data-form="ver"] [data-v=text]').value = d[B.ver.lang];
+    B.ver.en = d.en; B.ver.pt = d.pt; drawBuilder(); return;
   }
   if (act === 'savever') {
     keepVer(); const v = B.ver, src = v.id;
@@ -506,6 +511,8 @@ $('bLeft').addEventListener('click', async e => {
     const taken = new Set([...B.m.summaries.map(x => x.id), ...owners().flatMap(o => o.bullets.map(x => x.id))]);
     const newId = [src + 'v', src + 'v2', src + 'v3', src + 'v4', src + 'v5', src + 'v6'].find(x => !taken.has(x));
     if (v.en.trim() === it.en.trim() && v.pt.trim() === it.pt.trim()) { alert('This is the same text as the original. Change it, or pick a draft.'); return; }
+    const same = ['en', 'pt'].filter(l => v[l].trim() === it[l].trim());
+    if (same.length === 1 && !confirm(`The ${same[0] === 'en' ? 'English' : 'Portuguese'} text is still the original's. Save anyway?`)) return;
     const r = await edit('add', {kind: isSum ? 'summary' : 'bullet', parent: isSum ? null : it.owner, after: src,
                                  data: {id: newId, alt_of: (it.alt_of || []).length ? it.alt_of : [src], en: v.en, pt: v.pt, tags: v.tags}});
     if (r) B.ver = null;
